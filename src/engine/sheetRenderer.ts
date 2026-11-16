@@ -243,7 +243,7 @@ export function drawTemplateOnCanvas(
   for (const b of template.bubbles) {
     const cx = b.cx * W;
     const cy = b.cy * H;
-    const r = Math.max(4, Math.min(b.rx * W, b.ry * H));
+    const r = Math.max(4.5, Math.min(b.rx * W, b.ry * H));
 
     // Draw question labels once per question
     if (b.kind === 'part1' && b.question !== undefined && b.option === 'A') {
@@ -290,13 +290,13 @@ export function drawTemplateOnCanvas(
     // Draw bubble ring
     bctx.beginPath();
     bctx.arc(cx, cy, r, 0, Math.PI * 2);
-    bctx.strokeStyle = '#334155';
-    bctx.lineWidth = 1.3;
+    bctx.strokeStyle = '#475569';
+    bctx.lineWidth = 1.25;
     bctx.stroke();
 
-    // Option text inside bubble
-    bctx.fillStyle = '#64748B';
-    bctx.font = `${Math.max(8, Math.round(r * 1.05))}px sans-serif`;
+    // Option text inside bubble (lighter tone prevents OMR false positives)
+    bctx.fillStyle = '#94A3B8';
+    bctx.font = `${Math.max(8, Math.round(r * 1.0))}px sans-serif`;
     bctx.textAlign = 'center';
     bctx.textBaseline = 'middle';
     bctx.fillText(b.option, cx, cy + 0.5);
@@ -403,33 +403,178 @@ export async function generateBlankSheetPdf(
   return pdfDoc.save();
 }
 
-export interface ReportCardOptions {
-  showRanking: boolean;
-  showCorrectAnswers: boolean;
-  showComment: boolean;
-  classAverage: number;
-  rank?: number;
-  totalGraded: number;
+export type ReportCardTemplateKind =
+  | 'standard'
+  | 'detailed'
+  | 'competency'
+  | 'annotated_sheet';
+
+export type ReportCardImageMode = 'original' | 'warped' | 'annotated';
+export type ReportCardPaperFormat = 'A4' | 'A5' | 'paired_a5';
+
+export interface CommentBandRule {
+  minScore: number;
+  title: string;
+  commentTemplate: string;
 }
 
-export function generateObjectiveComment(sub: ExamSubmission): string {
+export interface ReportCardOptions {
+  templateKind?: ReportCardTemplateKind;
+  imageMode?: ReportCardImageMode;
+  paperFormat?: ReportCardPaperFormat;
+  showLogo?: boolean;
+  schoolLogoDataUrl?: string;
+  showRanking: boolean;
+  showClassAverage?: boolean;
+  showExamImage?: boolean;
+  showCorrectAnswers: boolean;
+  showDetailTable?: boolean;
+  showComment: boolean;
+  showComponentChart?: boolean;
+  showSignature?: boolean;
+  classAverage: number;
+  classRankMap?: Record<string, number>;
+  totalGraded: number;
+  commentBands?: CommentBandRule[];
+}
+
+export function slugifyVietnamese(text: string): string {
+  return (text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function buildReportCardFilename(
+  student: Student | undefined,
+  sub: ExamSubmission,
+  exam: Exam
+): string {
+  const cls = slugifyVietnamese(student?.className || 'Lop') || 'Lop';
+  const sbd = slugifyVietnamese(sub.sbd || student?.sbd || 'SBD') || 'SBD';
+  const name = slugifyVietnamese(student?.fullName || 'HocSinh') || 'HocSinh';
+  const subj = slugifyVietnamese(exam.subject || 'MonHoc') || 'MonHoc';
+  return `Phieu-tra-bai_${cls}_${sbd}_${name}_${subj}.pdf`;
+}
+
+const FALLBACK_BANDS: CommentBandRule[] = [
+  {
+    minScore: 9,
+    title: '9,0 – 10,0',
+    commentTemplate:
+      'Bài làm đạt kết quả rất tốt, nắm vững kiến thức trọng tâm và xử lý chính xác các câu hỏi.',
+  },
+  {
+    minScore: 8,
+    title: '8,0 – <9,0',
+    commentTemplate:
+      'Bài làm đạt kết quả tốt, kiến thức vững vàng; rà soát thêm chi tiết nhỏ để đạt điểm tối đa.',
+  },
+  {
+    minScore: 6.5,
+    title: '6,5 – <8,0',
+    commentTemplate:
+      'Bài làm đạt mức khá; nên luyện tập thêm các câu hỏi vận dụng để nâng cao kết quả.',
+  },
+  {
+    minScore: 5,
+    title: '5,0 – <6,5',
+    commentTemplate:
+      'Bài làm đạt mức trung bình; cần hệ thống lại kiến thức cơ bản và đọc kỹ yêu cầu đề.',
+  },
+  {
+    minScore: 3.5,
+    title: '3,5 – <5,0',
+    commentTemplate:
+      'Bài làm chưa đạt mức yêu cầu; cần ôn tập kỹ kiến thức nền tảng và luyện thêm dạng bài.',
+  },
+  {
+    minScore: 0,
+    title: '<3,5',
+    commentTemplate:
+      'Kết quả còn hạn chế so với yêu cầu đề kiểm tra; nên trao đổi cùng giáo viên để củng cố kiến thức.',
+  },
+];
+
+export function generateObjectiveComment(
+  sub: ExamSubmission,
+  exam?: Exam,
+  bands?: CommentBandRule[]
+): string {
+  if (sub.teacherCommentLocked && sub.teacherComment?.trim()) {
+    return sub.teacherComment.trim();
+  }
   const { total, maxPossible, correctCount, wrongCount, blankCount } = sub.scoreBreakdown;
+  const norm10 = maxPossible > 0 ? (total / maxPossible) * 10 : total;
+  const activeBands = [...(bands && bands.length > 0 ? bands : FALLBACK_BANDS)].sort(
+    (a, b) => b.minScore - a.minScore
+  );
+  const matchedBand = activeBands.find((b) => norm10 >= b.minScore) || activeBands[activeBands.length - 1];
+
   const parts: string[] = [
     `Đạt ${total}/${maxPossible} điểm (${correctCount} ý đúng, ${wrongCount} ý sai, ${blankCount} ý bỏ trống).`,
   ];
-  if (sub.reviewReasons.length > 0) {
-    parts.push(`Lưu ý kiểm tra lại: ${sub.reviewReasons.join('; ')}.`);
+  if (matchedBand?.commentTemplate) {
+    parts.push(matchedBand.commentTemplate);
+  }
+
+  if (exam?.questionSpecs && exam.questionSpecs.length > 0) {
+    const specMap = new Map(
+      exam.questionSpecs.map((sp) => [`${sp.part}_${sp.question}`, sp.topic])
+    );
+    const topicMistakes = new Map<string, number>();
+    for (const q of sub.recognition.questions) {
+      if (q.status === 'wrong' || q.status === 'blank') {
+        const tp = specMap.get(`${q.part}_${q.question}`);
+        if (tp) topicMistakes.set(tp, (topicMistakes.get(tp) || 0) + 1);
+      }
+    }
+    const topWeak = Array.from(topicMistakes.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([tp]) => tp);
+    if (topWeak.length > 0) {
+      parts.push(`Gợi ý ôn tập thêm: ${topWeak.join(', ')}.`);
+    }
+  }
+
+  if (sub.status !== 'graded' || sub.reviewReasons.length > 0) {
+    const reason = sub.reviewReasons.length > 0 ? sub.reviewReasons.join('; ') : 'Bài chưa kiểm duyệt chính thức';
+    parts.push(`[Tạm tính – Cần kiểm duyệt: ${reason}].`);
   }
   return parts.join(' ');
 }
 
+export interface ReportCardRenderInput {
+  submission: ExamSubmission;
+  student?: Student;
+  warpedImageDataUrl?: string;
+  imageDataUrl?: string;
+  isWarpedCoords?: boolean;
+  rank?: number;
+}
+
+function wrapTextLines(text: string, maxChars: number): string[] {
+  const words = (text || '').split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if (cur.length + 1 + w.length <= maxChars) cur += ' ' + w;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 export async function renderAnnotatedReportCardPdf(
-  submissions: {
-    submission: ExamSubmission;
-    student?: Student;
-    warpedImageDataUrl?: string;
-    rank?: number;
-  }[],
+  submissions: ReportCardRenderInput[],
   exam: Exam,
   template: SheetTemplate,
   options: ReportCardOptions
@@ -440,140 +585,471 @@ export async function renderAnnotatedReportCardPdf(
   const fontReg = await pdfDoc.embedFont(fonts.regular);
   const fontBold = await pdfDoc.embedFont(fonts.bold);
 
-  for (const item of submissions) {
-    const { submission, student, warpedImageDataUrl, rank } = item;
-    const page = pdfDoc.addPage([595.28, 841.89]); // A4 portrait report card
-    const pw = 595.28;
-    const ph = 841.89;
+  const templateKind = options.templateKind || 'detailed';
+  const imageMode = options.imageMode || 'annotated';
+  const paperFormat = options.paperFormat || 'A4';
+  const showLogo = options.showLogo !== false;
+  const showClassAverage = options.showClassAverage !== false;
+  const showExamImage = options.showExamImage !== false;
+  const showDetailTable = options.showDetailTable !== false;
+  const showComponentChart = options.showComponentChart !== false;
+  const showSignature = options.showSignature !== false;
 
-    // Header
-    page.drawRectangle({ x: 24, y: ph - 96, width: pw - 48, height: 74, color: rgb(0.96, 0.97, 0.99), borderColor: rgb(0.82, 0.86, 0.92), borderWidth: 1 });
-    page.drawText(exam.schoolName || 'TRƯỜNG THPT', { x: 34, y: ph - 40, size: 10, font: fontBold, color: rgb(0.12, 0.16, 0.23) });
-    page.drawText(`PHIẾU TRẢ BÀI KIỂM TRA – ${exam.name}`, { x: 34, y: ph - 56, size: 11.5, font: fontBold, color: rgb(0.14, 0.39, 0.92) });
+  let logoImg: Awaited<ReturnType<typeof pdfDoc.embedPng>> | null = null;
+  if (showLogo && options.schoolLogoDataUrl) {
+    try {
+      const lBytes = await fetch(options.schoolLogoDataUrl).then((r) => r.arrayBuffer());
+      logoImg = options.schoolLogoDataUrl.includes('image/png')
+        ? await pdfDoc.embedPng(lBytes)
+        : await pdfDoc.embedJpg(lBytes);
+    } catch {
+      logoImg = null;
+    }
+  }
+
+  const drawSingleReportCardInRect = async (
+    page: ReturnType<typeof pdfDoc.addPage>,
+    item: ReportCardRenderInput,
+    boxX: number,
+    boxY: number,
+    boxW: number,
+    boxH: number,
+    compact: boolean
+  ) => {
+    const { submission, student, rank } = item;
+    const isProvisional = submission.status !== 'graded';
+    const scaleF = compact ? 0.74 : 1;
+    const pad = compact ? 14 : 24;
+    const x0 = boxX + pad;
+    const innerW = boxW - pad * 2;
+    const topY = boxY + boxH - pad;
+
+    // Header box
+    const hdrH = compact ? 62 : 76;
+    page.drawRectangle({
+      x: x0,
+      y: topY - hdrH,
+      width: innerW,
+      height: hdrH,
+      color: rgb(0.96, 0.98, 1),
+      borderColor: isProvisional ? rgb(0.92, 0.55, 0.1) : rgb(0.82, 0.86, 0.92),
+      borderWidth: 1,
+    });
+
+    let textX = x0 + 10;
+    if (logoImg) {
+      const logoSz = hdrH - 18;
+      page.drawImage(logoImg, {
+        x: x0 + 8,
+        y: topY - hdrH + 9,
+        width: logoSz,
+        height: logoSz,
+      });
+      textX += logoSz + 8;
+    }
+
+    page.drawText(exam.schoolName || 'TRƯỜNG THPT', {
+      x: textX,
+      y: topY - 15 * scaleF,
+      size: 9.5 * scaleF,
+      font: fontBold,
+      color: rgb(0.12, 0.16, 0.23),
+    });
+    page.drawText(`PHIẾU TRẢ BÀI – ${exam.name}`, {
+      x: textX,
+      y: topY - 30 * scaleF,
+      size: 11 * scaleF,
+      font: fontBold,
+      color: rgb(0.14, 0.39, 0.92),
+    });
+    if (isProvisional) {
+      const badgeW = compact ? 105 : 148;
+      page.drawRectangle({
+        x: x0 + innerW - badgeW - 6,
+        y: topY - 22 * scaleF,
+        width: badgeW,
+        height: 14 * scaleF,
+        color: rgb(0.99, 0.93, 0.84),
+        borderColor: rgb(0.92, 0.55, 0.1),
+        borderWidth: 0.7,
+      });
+      page.drawText('TẠM TÍNH – CHỜ DUYỆT', {
+        x: x0 + innerW - badgeW - 1,
+        y: topY - 18 * scaleF,
+        size: 7 * scaleF,
+        font: fontBold,
+        color: rgb(0.75, 0.35, 0.02),
+      });
+    }
+
     page.drawText(
-      `Môn: ${exam.subject}  |  Họ tên: ${student?.fullName || '(Chưa đối chiếu)'}  |  SBD: ${submission.sbd || '---'}  |  Lớp: ${student?.className || '---'}  |  Mã đề: ${submission.examCode || '---'}`,
-      { x: 34, y: ph - 74, size: 8.5, font: fontReg, color: rgb(0.2, 0.25, 0.33) }
+      `Môn: ${exam.subject} | Họ tên: ${student?.fullName || '(Chưa đối chiếu)'} | SBD: ${submission.sbd || '---'} | Lớp: ${student?.className || '---'} | Mã đề: ${submission.examCode || '---'}`,
+      {
+        x: textX,
+        y: topY - 46 * scaleF,
+        size: 8.2 * scaleF,
+        font: fontReg,
+        color: rgb(0.2, 0.25, 0.33),
+      }
     );
 
-    // Score summary bar
-    const rankStr = options.showRanking && rank ? `  |  Hạng: ${rank}/${options.totalGraded}` : '';
+    const avgPart = showClassAverage ? ` | ĐTB chung: ${options.classAverage}` : '';
+    const rankPart = options.showRanking && rank ? ` | Hạng: ${rank}/${options.totalGraded}` : '';
+    const partText = `P.I: ${submission.scoreBreakdown.part1}${template.part2Count > 0 ? ` · P.II: ${submission.scoreBreakdown.part2}` : ''}${template.part3Count > 0 ? ` · P.III: ${submission.scoreBreakdown.part3}` : ''}`;
     page.drawText(
-      `Tổng điểm: ${submission.scoreBreakdown.total}/${submission.scoreBreakdown.maxPossible}   (P.I: ${submission.scoreBreakdown.part1} · P.II: ${submission.scoreBreakdown.part2} · P.III: ${submission.scoreBreakdown.part3})   |   ĐTB lớp: ${options.classAverage}${rankStr}`,
-      { x: 34, y: ph - 89, size: 8.8, font: fontBold, color: rgb(0.09, 0.55, 0.29) }
+      `Tổng điểm: ${submission.scoreBreakdown.total}/${submission.scoreBreakdown.maxPossible} (${partText})${avgPart}${rankPart}`,
+      {
+        x: textX,
+        y: topY - (compact ? 56 : 62),
+        size: 8.5 * scaleF,
+        font: fontBold,
+        color: isProvisional ? rgb(0.78, 0.4, 0.05) : rgb(0.09, 0.55, 0.29),
+      }
     );
 
-    // Draw annotated warped sheet image on left (with exact coordinate overlay!)
-    const imgBoxX = 24;
-    const imgBoxY = 148;
-    const imgBoxW = 316;
-    const imgBoxH = 580;
+    let curTop = topY - hdrH - (compact ? 10 : 14);
+    const footerReserve = (options.showComment ? (compact ? 62 : 82) : 14) + (showSignature ? (compact ? 36 : 52) : 8);
+    const bodyBottom = boxY + pad + footerReserve;
 
-    if (warpedImageDataUrl) {
+    const activeImgUrl = item.imageDataUrl || item.warpedImageDataUrl;
+    const canShowImg = showExamImage && !!activeImgUrl && templateKind !== 'standard' && templateKind !== 'competency';
+    const wantFullSheet = templateKind === 'annotated_sheet';
+
+    // Component bar chart when requested (compact horizontal stacked bar)
+    if (showComponentChart && !wantFullSheet) {
+      const barH = compact ? 16 : 20;
+      const maxP = Math.max(0.01, submission.scoreBreakdown.maxPossible);
+      const barW = innerW;
+      page.drawText(
+        `Phân bố tỷ trọng điểm: Đúng ${submission.scoreBreakdown.correctCount} | Sai ${submission.scoreBreakdown.wrongCount} | Trống ${submission.scoreBreakdown.blankCount}`,
+        { x: x0, y: curTop - 8, size: 7.4 * scaleF, font: fontBold, color: rgb(0.28, 0.34, 0.42) }
+      );
+      const yBar = curTop - 12 - barH;
+      page.drawRectangle({ x: x0, y: yBar, width: barW, height: barH * 0.55, color: rgb(0.93, 0.95, 0.97) });
+      let accX = x0;
+      const segments = [
+        { val: submission.scoreBreakdown.part1, color: rgb(0.14, 0.39, 0.92) },
+        { val: submission.scoreBreakdown.part2, color: rgb(0.09, 0.64, 0.29) },
+        { val: submission.scoreBreakdown.part3, color: rgb(0.55, 0.36, 0.96) },
+      ];
+      for (const seg of segments) {
+        if (seg.val <= 0) continue;
+        const w = Math.min(x0 + barW - accX, (seg.val / maxP) * barW);
+        page.drawRectangle({ x: accX, y: yBar, width: w, height: barH * 0.55, color: seg.color });
+        accX += w;
+      }
+      curTop = yBar - 8;
+    }
+
+    const availBodyH = Math.max(90, curTop - bodyBottom);
+
+    // Draw exam image (left column or full area for annotated_sheet)
+    let tableX = x0;
+    let tableW = innerW;
+    if (canShowImg || (showExamImage && wantFullSheet && activeImgUrl)) {
+      const imgW = wantFullSheet ? innerW : innerW * 0.54;
+      const imgH = availBodyH - 16;
+      const imgX = x0;
+      const imgY = bodyBottom + 14;
       try {
-        const bytes = await fetch(warpedImageDataUrl).then((r) => r.arrayBuffer());
-        const embedded = warpedImageDataUrl.includes('image/png')
+        const bytes = await fetch(activeImgUrl!).then((r) => r.arrayBuffer());
+        const embedded = activeImgUrl!.includes('image/png')
           ? await pdfDoc.embedPng(bytes)
           : await pdfDoc.embedJpg(bytes);
         const aspect = embedded.width / embedded.height;
-        let drawW = imgBoxW;
+        let drawW = imgW;
         let drawH = drawW / aspect;
-        if (drawH > imgBoxH) {
-          drawH = imgBoxH;
+        if (drawH > imgH) {
+          drawH = imgH;
           drawW = drawH * aspect;
         }
-        const drawX = imgBoxX;
-        const drawY = imgBoxY + (imgBoxH - drawH);
+        const drawX = imgX + (wantFullSheet ? (imgW - drawW) / 2 : 0);
+        const drawY = imgY + (imgH - drawH);
 
         page.drawImage(embedded, { x: drawX, y: drawY, width: drawW, height: drawH });
 
-        // Overlay vector annotations using exact canonical bubble coordinates (non-occluding!)
-        for (const q of submission.recognition.questions) {
-          for (const b of q.bubbles) {
-            const bx = drawX + b.cx * drawW;
-            const by = drawY + (1 - b.cy) * drawH;
-            const br = Math.max(3, b.rx * drawW * 1.15);
+        // Overlay OMR result markers ONLY in 'annotated' mode when image is in canonical/warped space
+        if (imageMode === 'annotated' && item.isWarpedCoords !== false) {
+          const p2Groups = new Map<number, typeof submission.recognition.questions>();
+          for (const q of submission.recognition.questions) {
+            if (q.part === 'part2') {
+              const g = p2Groups.get(q.question) || [];
+              g.push(q);
+              p2Groups.set(q.question, g);
+            }
+            for (const b of q.bubbles) {
+              const bx = drawX + b.cx * drawW;
+              const by = drawY + (1 - b.cy) * drawH;
+              const br = Math.max(2.6, Math.min(b.rx * drawW, b.ry * drawH) * 1.15);
 
-            if (q.status === 'correct' && b.option === q.detectedValue) {
-              page.drawCircle({ x: bx, y: by, size: br + 1.5, borderColor: rgb(0.09, 0.64, 0.29), borderWidth: 1.4 });
-            } else if (q.status === 'wrong') {
-              if (b.option === q.detectedValue) {
-                page.drawLine({ start: { x: bx - br, y: by - br }, end: { x: bx + br, y: by + br }, color: rgb(0.86, 0.15, 0.15), thickness: 1.3 });
-                page.drawLine({ start: { x: bx - br, y: by + br }, end: { x: bx + br, y: by - br }, color: rgb(0.86, 0.15, 0.15), thickness: 1.3 });
+              const isChosen =
+                q.part === 'part3'
+                  ? b.isMarked
+                  : q.detectedValue
+                  ? b.option === q.detectedValue
+                  : b.isMarked;
+
+              if (q.status === 'correct' && isChosen) {
+                page.drawCircle({ x: bx, y: by, size: br + 1.3, borderColor: rgb(0.09, 0.64, 0.29), borderWidth: 1.3 });
+              } else if (q.status === 'wrong') {
+                if (isChosen) {
+                  page.drawLine({ start: { x: bx - br, y: by - br }, end: { x: bx + br, y: by + br }, color: rgb(0.86, 0.15, 0.15), thickness: 1.25 });
+                  page.drawLine({ start: { x: bx - br, y: by + br }, end: { x: bx + br, y: by - br }, color: rgb(0.86, 0.15, 0.15), thickness: 1.25 });
+                }
+                if (options.showCorrectAnswers && q.part !== 'part3' && b.option === q.correctValue) {
+                  page.drawCircle({ x: bx, y: by, size: br + 1.2, borderColor: rgb(0.14, 0.39, 0.92), borderWidth: 1.2 });
+                }
+              } else if (q.status === 'blank') {
+                if (options.showCorrectAnswers && q.part !== 'part3' && b.option === q.correctValue) {
+                  page.drawCircle({ x: bx, y: by, size: br + 1.2, borderColor: rgb(0.14, 0.39, 0.92), borderWidth: 1.1 });
+                }
+              } else if (
+                (q.status === 'multi_mark' || q.status === 'faint' || q.status === 'erased' || q.status === 'pending_review' || q.status === 'unrecognized') &&
+                b.isMarked
+              ) {
+                page.drawCircle({ x: bx, y: by, size: br + 1.4, borderColor: rgb(0.92, 0.45, 0.05), borderWidth: 1.3 });
               }
-              if (options.showCorrectAnswers && b.option === q.correctValue) {
-                page.drawCircle({ x: bx + br * 1.9, y: by, size: br * 0.65, color: rgb(0.09, 0.64, 0.29) });
-              }
-            } else if (q.status === 'blank' && options.showCorrectAnswers && b.option === q.correctValue) {
-              page.drawRectangle({ x: bx - br, y: by - br, width: br * 2, height: br * 2, borderColor: rgb(0.14, 0.39, 0.92), borderWidth: 1.1 });
-            } else if (
-              (q.status === 'multi_mark' || q.status === 'faint' || q.status === 'erased' || q.status === 'pending_review') &&
-              b.isMarked
-            ) {
-              page.drawCircle({ x: bx, y: by, size: br + 1.5, borderColor: rgb(0.92, 0.5, 0.05), borderWidth: 1.4 });
+            }
+
+            // Part III summary badge near top-left of question grid
+            if (q.part === 'part3' && q.bubbles.length > 0) {
+              const firstB = q.bubbles[0];
+              const px = drawX + firstB.cx * drawW;
+              const py = drawY + (1 - firstB.cy) * drawH + 14;
+              const tagColor =
+                q.status === 'correct'
+                  ? rgb(0.09, 0.64, 0.29)
+                  : q.status === 'wrong'
+                  ? rgb(0.86, 0.15, 0.15)
+                  : rgb(0.45, 0.5, 0.58);
+              const tagTxt = options.showCorrectAnswers
+                ? `${q.detectedValue || 'Trống'} / ĐÁ:${q.correctValue || '-'}`
+                : `${q.detectedValue || 'Trống'}`;
+              page.drawText(tagTxt, { x: px, y: py, size: 5.5, font: fontBold, color: tagColor });
             }
           }
+
+          // Part II progressive whole-question point callout near subItem 'd'
+          for (const [, p2Items] of p2Groups.entries()) {
+            const last = p2Items[p2Items.length - 1];
+            const refB = last?.bubbles[0];
+            if (!refB) continue;
+            const qEarned = roundTo2(p2Items.reduce((a, b) => a + b.earnedPoints, 0));
+            const bx = drawX + refB.cx * drawW + 22;
+            const by = drawY + (1 - refB.cy) * drawH - 10;
+            page.drawText(`+${qEarned}đ`, {
+              x: bx,
+              y: by,
+              size: 5.8,
+              font: fontBold,
+              color: qEarned > 0 ? rgb(0.09, 0.55, 0.29) : rgb(0.6, 0.2, 0.2),
+            });
+          }
+        }
+
+        if (!wantFullSheet) {
+          tableX = x0 + imgW + 10;
+          tableW = innerW - imgW - 10;
         }
       } catch {
-        page.drawText('(Không thể nhúng ảnh bài thi)', { x: imgBoxX + 20, y: imgBoxY + 280, size: 9, font: fontReg });
+        page.drawText('(Không thể tải ảnh phiếu thi)', { x: imgX + 10, y: imgY + imgH * 0.5, size: 8, font: fontReg });
+      }
+      page.drawText(
+        'Ký hiệu: Xanh lá = Đúng | X đỏ = Sai | Vòng xanh dương = Đáp án đúng | Cam = Cần duyệt',
+        { x: x0, y: bodyBottom + 2, size: 6.5 * scaleF, font: fontReg, color: rgb(0.4, 0.46, 0.54) }
+      );
+    }
+
+    // Topic/cognitive breakdown table for 'competency' template
+    if (templateKind === 'competency' && exam.questionSpecs && exam.questionSpecs.length > 0) {
+      const specMap = new Map(exam.questionSpecs.map((s) => [`${s.part}_${s.question}`, s]));
+      const byTopic = new Map<string, { earned: number; max: number; count: number }>();
+      for (const q of submission.recognition.questions) {
+        const sp = specMap.get(`${q.part}_${q.question}`);
+        const tp = sp?.topic || 'Chung';
+        const cur = byTopic.get(tp) || { earned: 0, max: 0, count: 0 };
+        cur.earned += q.earnedPoints;
+        cur.max += q.maxPoints || 0.25;
+        cur.count += 1;
+        byTopic.set(tp, cur);
+      }
+      page.drawText('PHÂN TÍCH MỨC ĐỘ ĐẠT THEO CHUYÊN ĐỀ', {
+        x: tableX,
+        y: curTop - 8,
+        size: 8.8 * scaleF,
+        font: fontBold,
+        color: rgb(0.12, 0.16, 0.23),
+      });
+      let cy = curTop - 24;
+      for (const [tp, v] of byTopic.entries()) {
+        if (cy < bodyBottom + 16) break;
+        const pct = v.max > 0 ? Math.round((v.earned / v.max) * 100) : 0;
+        page.drawText(`${tp} (${v.count} ý): ${roundTo2(v.earned)}/${roundTo2(v.max)} đ (${pct}%)`, {
+          x: tableX,
+          y: cy,
+          size: 7.6 * scaleF,
+          font: fontReg,
+          color: rgb(0.15, 0.2, 0.28),
+        });
+        cy -= 13 * scaleF;
+      }
+    } else if (showDetailTable && !wantFullSheet) {
+      // Multi-column detail question breakdown table so ALL questions fit without truncation
+      page.drawText('BẢNG CHI TIẾT TỪNG CÂU HỎI', {
+        x: tableX,
+        y: curTop - 8,
+        size: 8.8 * scaleF,
+        font: fontBold,
+        color: rgb(0.12, 0.16, 0.23),
+      });
+      const qs = submission.recognition.questions;
+      const lineH = compact ? 9.5 : 11.5;
+      const maxRowsPerCol = Math.max(10, Math.floor((availBodyH - 28) / lineH));
+      const numCols = qs.length > maxRowsPerCol ? 2 : 1;
+      const colW = tableW / numCols;
+
+      for (let c = 0; c < numCols; c++) {
+        const cx = tableX + c * colW;
+        page.drawText('Câu   Chọn  ĐÁ   KQ', {
+          x: cx,
+          y: curTop - 21,
+          size: 6.8 * scaleF,
+          font: fontBold,
+          color: rgb(0.4, 0.45, 0.52),
+        });
+        const slice = qs.slice(c * maxRowsPerCol, (c + 1) * maxRowsPerCol);
+        let ry = curTop - 33;
+        for (const q of slice) {
+          const label =
+            q.part === 'part1'
+              ? `I.${q.question}`
+              : q.part === 'part2'
+              ? `II.${q.question}${q.subItem || ''}`
+              : `III.${q.question}`;
+          const stTxt =
+            q.status === 'correct'
+              ? 'Đúng'
+              : q.status === 'wrong'
+              ? 'Sai'
+              : q.status === 'blank'
+              ? 'Trống'
+              : 'Duyệt';
+          const stClr =
+            q.status === 'correct'
+              ? rgb(0.09, 0.64, 0.29)
+              : q.status === 'wrong'
+              ? rgb(0.86, 0.15, 0.15)
+              : q.status === 'blank'
+              ? rgb(0.45, 0.5, 0.58)
+              : rgb(0.85, 0.47, 0.02);
+          const fSz = (compact ? 6.2 : 7.0);
+          page.drawText(label, { x: cx, y: ry, size: fSz, font: fontReg, color: rgb(0.15, 0.2, 0.28) });
+          page.drawText(q.detectedValue || '-', { x: cx + colW * 0.26, y: ry, size: fSz, font: fontBold, color: rgb(0.15, 0.2, 0.28) });
+          page.drawText(options.showCorrectAnswers ? q.correctValue || '-' : '***', {
+            x: cx + colW * 0.5,
+            y: ry,
+            size: fSz,
+            font: fontReg,
+            color: rgb(0.15, 0.2, 0.28),
+          });
+          page.drawText(stTxt, { x: cx + colW * 0.74, y: ry, size: fSz, font: fontBold, color: stClr });
+          ry -= lineH;
+        }
       }
     }
 
-    // Right panel: detailed question breakdown table
-    const tblX = 352;
-    const tblTop = ph - 114;
-    page.drawText('BẢNG CHI TIẾT CÂU HỎI', { x: tblX, y: tblTop, size: 9.5, font: fontBold, color: rgb(0.12, 0.16, 0.23) });
-    page.drawText('Câu     Chọn    Đáp án   Trạng thái', { x: tblX, y: tblTop - 16, size: 7.5, font: fontBold, color: rgb(0.4, 0.45, 0.52) });
-
-    let rowY = tblTop - 30;
-    const maxRows = 42;
-    const items = submission.recognition.questions.slice(0, maxRows);
-    for (const q of items) {
-      const label =
-        q.part === 'part1'
-          ? `I.${q.question}`
-          : q.part === 'part2'
-          ? `II.${q.question}${q.subItem || ''}`
-          : `III.${q.question}`;
-      const statusText =
-        q.status === 'correct'
-          ? 'Đúng'
-          : q.status === 'wrong'
-          ? 'Sai'
-          : q.status === 'blank'
-          ? 'Trống'
-          : 'Duyệt';
-      const statusColor =
-        q.status === 'correct'
-          ? rgb(0.09, 0.64, 0.29)
-          : q.status === 'wrong'
-          ? rgb(0.86, 0.15, 0.15)
-          : q.status === 'blank'
-          ? rgb(0.45, 0.5, 0.58)
-          : rgb(0.85, 0.47, 0.02);
-
-      page.drawText(label, { x: tblX, y: rowY, size: 7.4, font: fontReg, color: rgb(0.15, 0.2, 0.28) });
-      page.drawText(q.detectedValue || '-', { x: tblX + 52, y: rowY, size: 7.4, font: fontBold, color: rgb(0.15, 0.2, 0.28) });
-      page.drawText(options.showCorrectAnswers ? q.correctValue || '-' : '***', { x: tblX + 95, y: rowY, size: 7.4, font: fontReg, color: rgb(0.15, 0.2, 0.28) });
-      page.drawText(statusText, { x: tblX + 145, y: rowY, size: 7.4, font: fontBold, color: statusColor });
-      rowY -= 13.5;
-    }
-
-    // Legend & objective comment at bottom
-    page.drawText(
-      'Ký hiệu trên ảnh: Vòng xanh lá = Đúng | Chữ X đỏ = Sai | Chấm xanh = Đáp án đúng | Khung xanh dương = Bỏ trống | Vòng cam = Cần duyệt',
-      { x: 24, y: 122, size: 7.2, font: fontReg, color: rgb(0.35, 0.4, 0.48) }
-    );
-
+    // Comment box
+    let sigTopY = boxY + pad + (showSignature ? (compact ? 30 : 44) : 4);
     if (options.showComment) {
-      page.drawRectangle({ x: 24, y: 42, width: pw - 48, height: 68, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.93), borderWidth: 0.8 });
-      page.drawText('Nhận xét dựa trên dữ liệu chấm:', { x: 34, y: 94, size: 8.5, font: fontBold, color: rgb(0.12, 0.16, 0.23) });
-      const comment = generateObjectiveComment(submission);
-      page.drawText(comment.slice(0, 115), { x: 34, y: 78, size: 8.2, font: fontReg, color: rgb(0.2, 0.25, 0.33) });
-      if (comment.length > 115) {
-        page.drawText(comment.slice(115, 230), { x: 34, y: 63, size: 8.2, font: fontReg, color: rgb(0.2, 0.25, 0.33) });
+      const cBoxH = compact ? 52 : 66;
+      const cBoxY = sigTopY + 6;
+      page.drawRectangle({
+        x: x0,
+        y: cBoxY,
+        width: innerW,
+        height: cBoxH,
+        color: rgb(0.98, 0.99, 1),
+        borderColor: rgb(0.85, 0.88, 0.93),
+        borderWidth: 0.8,
+      });
+      page.drawText('Nhận xét của giáo viên / phân tích kết quả:', {
+        x: x0 + 8,
+        y: cBoxY + cBoxH - 13,
+        size: 7.8 * scaleF,
+        font: fontBold,
+        color: rgb(0.12, 0.16, 0.23),
+      });
+      const comment =
+        submission.teacherComment?.trim() ||
+        generateObjectiveComment(submission, exam, options.commentBands);
+      const lines = wrapTextLines(comment, compact ? 76 : 102).slice(0, 3);
+      lines.forEach((ln, idx) => {
+        page.drawText(ln, {
+          x: x0 + 8,
+          y: cBoxY + cBoxH - 26 - idx * (11 * scaleF),
+          size: 7.6 * scaleF,
+          font: fontReg,
+          color: rgb(0.2, 0.25, 0.33),
+        });
+      });
+    }
+
+    // Signature block
+    if (showSignature) {
+      page.drawText(`Ngày trả bài: ${exam.examDate || '..../..../2026'}`, {
+        x: x0,
+        y: boxY + pad + 18,
+        size: 7.4 * scaleF,
+        font: fontReg,
+        color: rgb(0.35, 0.4, 0.48),
+      });
+      page.drawText(`Giáo viên chấm: ${exam.teacherName || '....................'}`, {
+        x: x0 + innerW * 0.56,
+        y: boxY + pad + 18,
+        size: 7.4 * scaleF,
+        font: fontBold,
+        color: rgb(0.2, 0.25, 0.33),
+      });
+      page.drawText('(Ký và ghi rõ họ tên)', {
+        x: x0 + innerW * 0.62,
+        y: boxY + pad + 7,
+        size: 6.6 * scaleF,
+        font: fontReg,
+        color: rgb(0.45, 0.5, 0.58),
+      });
+    }
+  };
+
+  if (paperFormat === 'paired_a5') {
+    const pw = 841.89;
+    const ph = 595.28;
+    for (let i = 0; i < submissions.length; i += 2) {
+      const page = pdfDoc.addPage([pw, ph]);
+      // Center cut line
+      page.drawLine({
+        start: { x: pw / 2, y: 14 },
+        end: { x: pw / 2, y: ph - 14 },
+        color: rgb(0.75, 0.8, 0.86),
+        thickness: 0.8,
+        dashArray: [4, 4],
+      });
+      await drawSingleReportCardInRect(page, submissions[i], 0, 0, pw / 2, ph, true);
+      if (submissions[i + 1]) {
+        await drawSingleReportCardInRect(page, submissions[i + 1], pw / 2, 0, pw / 2, ph, true);
       }
+    }
+  } else {
+    const [pw, ph] = paperFormat === 'A5' ? [419.53, 595.28] : [595.28, 841.89];
+    for (const item of submissions) {
+      const page = pdfDoc.addPage([pw, ph]);
+      await drawSingleReportCardInRect(page, item, 0, 0, pw, ph, paperFormat === 'A5');
     }
   }
 
   return pdfDoc.save();
 }
+
+function roundTo2(v: number): number {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+

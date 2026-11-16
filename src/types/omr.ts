@@ -115,6 +115,13 @@ export interface SheetTemplate {
   updatedAt: number;
 }
 
+export interface QuestionSpecMeta {
+  part: 'part1' | 'part2' | 'part3';
+  question: number;
+  topic: string;
+  cognitiveLevel: 'NB' | 'TH' | 'VD' | 'VDC';
+}
+
 export interface Exam {
   id: string;
   schoolName: string; // default 'TRƯỜNG THPT'
@@ -131,6 +138,7 @@ export interface Exam {
   scoreScale: number; // e.g. 10
   passThreshold: number; // e.g. 5.0
   examCodes: string[];
+  questionSpecs?: QuestionSpecMeta[];
   isArchived: boolean;
   isPractice?: boolean;
   createdAt: number;
@@ -305,6 +313,8 @@ export interface ExamSubmission {
   status: SubmissionStatus;
   reviewReasons: string[];
   editHistory: ReviewEditEntry[];
+  teacherComment?: string;
+  teacherCommentLocked?: boolean;
   isPractice?: boolean;
   practiceSheetId?: string;
   isTestSample?: boolean;
@@ -351,6 +361,12 @@ export interface AppSettings {
   soundEnabled: boolean;
   hideStudentInfoOnPhach: boolean;
   showRankingDefault: boolean;
+  schoolLogoDataUrl?: string;
+  reportCommentBands?: {
+    minScore: number;
+    title: string;
+    commentTemplate: string;
+  }[];
   vnEduColumnMap: Record<string, string>;
   smasColumnMap: Record<string, string>;
   googleDriveSyncEnabled: boolean;

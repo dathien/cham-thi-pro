@@ -409,9 +409,9 @@ function measureBubblesOnWarped(
     cv.divide(gray, bgBlur, norm, 255, -1);
 
     // Thresholds on shadow-normalized luminance [0..255]:
-    // Solid pencil/pen fill < 165; faint / erased smudge < 215
-    cv.threshold(norm, coreDark, 165, 255, cv.THRESH_BINARY_INV);
-    cv.threshold(norm, faintDark, 212, 255, cv.THRESH_BINARY_INV);
+    // Solid pencil/pen fill < 155; faint / erased smudge < 210
+    cv.threshold(norm, coreDark, 155, 255, cv.THRESH_BINARY_INV);
+    cv.threshold(norm, faintDark, 210, 255, cv.THRESH_BINARY_INV);
 
     const coreData = coreDark.data as Uint8Array;
     const faintData = faintDark.data as Uint8Array;
@@ -419,14 +419,13 @@ function measureBubblesOnWarped(
     for (const b of bubbles) {
       const cxPx = b.cx * W;
       const cyPx = b.cy * H;
-      const rxPx = Math.max(4, b.rx * W);
-      const ryPx = Math.max(4, b.ry * H);
+      const rPx = Math.max(4.5, Math.min(b.rx * W, b.ry * H));
 
-      // Sample inner core (0.72 * r) to avoid printed circle outline, and outer halo (1.05..1.45 * r) for erasure
-      const xMin = Math.max(0, Math.floor(cxPx - rxPx * 1.45));
-      const xMax = Math.min(W - 1, Math.ceil(cxPx + rxPx * 1.45));
-      const yMin = Math.max(0, Math.floor(cyPx - ryPx * 1.45));
-      const yMax = Math.min(H - 1, Math.ceil(cyPx + ryPx * 1.45));
+      // Sample inner core (0.72 * r) to avoid printed circle outline, and outer halo (1.07..1.42 * r) for erasure
+      const xMin = Math.max(0, Math.floor(cxPx - rPx * 1.42));
+      const xMax = Math.min(W - 1, Math.ceil(cxPx + rPx * 1.42));
+      const yMin = Math.max(0, Math.floor(cyPx - rPx * 1.42));
+      const yMax = Math.min(H - 1, Math.ceil(cyPx + rPx * 1.42));
 
       let coreTotal = 0;
       let coreDarkCount = 0;
@@ -435,10 +434,10 @@ function measureBubblesOnWarped(
       let ringSmudgeCount = 0;
 
       for (let y = yMin; y <= yMax; y++) {
-        const dy = (y - cyPx) / ryPx;
+        const dy = (y - cyPx) / rPx;
         const rowOffset = y * W;
         for (let x = xMin; x <= xMax; x++) {
-          const dx = (x - cxPx) / rxPx;
+          const dx = (x - cxPx) / rPx;
           const dist2 = dx * dx + dy * dy;
           const idx = rowOffset + x;
           if (dist2 <= 0.52) {
@@ -446,8 +445,8 @@ function measureBubblesOnWarped(
             coreTotal++;
             if (coreData[idx] > 0) coreDarkCount++;
             else if (faintData[idx] > 0) coreFaintCount++;
-          } else if (dist2 >= 1.15 && dist2 <= 2.1) {
-            // Outer halo ring (1.07 <= r <= 1.45) - detects erasure smudges outside circle
+          } else if (dist2 >= 1.18 && dist2 <= 2.02) {
+            // Outer halo ring (1.08 <= r <= 1.42) - detects erasure smudges outside circle
             ringTotal++;
             if (faintData[idx] > 0) ringSmudgeCount++;
           }

@@ -333,8 +333,8 @@ function pickScenarioForIndex(idx0: number): PracticeScenario {
   return 'wrong_exam_code';
 }
 
-export function buildPracticeSheets135(): PracticeSheetSpec[] {
-  const exams = buildPracticeExams().slice(0, 3); // First 3 exams: Toán 12, Vật lý 11, Hóa học 10
+export function buildPracticeSheets225(): PracticeSheetSpec[] {
+  const exams = buildPracticeExams(); // All 5 exams: Toán 12, Vật lý 11, Hóa học 10, Tin học 12, Tiếng Anh 11
   const students = buildPracticeStudents();
   const keys = buildPracticeAnswerKeys();
   const sheets: PracticeSheetSpec[] = [];
@@ -343,10 +343,12 @@ export function buildPracticeSheets135(): PracticeSheetSpec[] {
     exam_prac_toan12: '12A5',
     exam_prac_ly11: '11A2',
     exam_prac_hoa10: '10A1',
+    exam_prac_tin12: '12A5',
+    exam_prac_anh11: '11A2',
   };
 
   for (const ex of exams) {
-    const clsName = examClassMap[ex.id];
+    const clsName = examClassMap[ex.id] || '12A5';
     const clsStudents = students.filter((s) => s.className === clsName);
     clsStudents.forEach((st, idx) => {
       const code = ex.examCodes[idx % ex.examCodes.length];
@@ -356,7 +358,8 @@ export function buildPracticeSheets135(): PracticeSheetSpec[] {
       let expectedScore = 10;
       let expectedSummary = 'Đúng toàn bộ theo đáp án';
       if (scenario === 'has_wrong') {
-        const wrongCount = (idx % 4) + 1;
+        const numSeed = Number(st.sbd.slice(-2)) || 1;
+        const wrongCount = (numSeed % 4) + 1;
         expectedScore = Math.max(0, Math.round((10 - wrongCount * ak.part1PointsPerQ) * 100) / 100);
         expectedSummary = `Sai ${wrongCount} câu Phần I`;
       } else if (scenario === 'has_blank') {
@@ -394,6 +397,10 @@ export function buildPracticeSheets135(): PracticeSheetSpec[] {
   }
 
   return sheets;
+}
+
+export function buildPracticeSheets135(): PracticeSheetSpec[] {
+  return buildPracticeSheets225().slice(0, 135);
 }
 
 export function buildSimSpecForPracticeSheet(

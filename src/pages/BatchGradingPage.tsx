@@ -23,7 +23,7 @@ import {
 import {
   buildPracticeAnswerKeys,
   buildPracticeExams,
-  buildPracticeSheets135,
+  buildPracticeSheets225,
   generatePracticeBatchPdf,
 } from '../engine/practiceData';
 import type { ExamSubmission } from '../types/omr';
@@ -99,9 +99,9 @@ export const BatchGradingPage: React.FC = () => {
     }
   }, []);
 
-  const allPracticeSheets = useMemo(() => buildPracticeSheets135(), []);
+  const allPracticeSheets = useMemo(() => buildPracticeSheets225(), []);
   const selectedPracticeSheets = useMemo(() => {
-    if (practiceSubset === 'all_135') return allPracticeSheets;
+    if (practiceSubset === 'all_225') return allPracticeSheets;
     return allPracticeSheets.filter((s) => s.examId === practiceSubset);
   }, [allPracticeSheets, practiceSubset]);
 
@@ -141,7 +141,7 @@ export const BatchGradingPage: React.FC = () => {
   const handleRunPracticeTestGrading = async () => {
     if (opencvStatus !== 'ready' || practiceBusy) return;
     setDataScope('practice');
-    if (practiceSubset !== 'all_135') {
+    if (practiceSubset !== 'all_225') {
       setActiveExamId(practiceSubset);
     }
     setPracticeBusy(true);
@@ -149,12 +149,16 @@ export const BatchGradingPage: React.FC = () => {
     setPracticeProgress({ done: 0, total: selectedPracticeSheets.length });
 
     try {
-      const results = await runPracticeGrading(selectedPracticeSheets, (done, total, item) => {
-        setPracticeProgress({ done, total });
-        if (item) {
-          setPracticeResults((prev) => [...prev, item]);
-        }
-      });
+      const results = await runPracticeGrading(
+        selectedPracticeSheets,
+        (done, total, item) => {
+          setPracticeProgress({ done, total });
+          if (item) {
+            setPracticeResults((prev) => [...prev, item]);
+          }
+        },
+        { forceRegrade: true }
+      );
       setPracticeResults(results);
     } finally {
       setPracticeBusy(false);
@@ -567,10 +571,10 @@ export const BatchGradingPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold text-[#1E293B] flex items-center gap-2">
               <FlaskConical className="w-4 h-4 text-[#2563EB]" />
-              Bộ 135 phiếu bài thi thực hành để thử nghiệm OpenCV OMR
+              Bộ 225 phiếu bài thi thực hành để thử nghiệm OpenCV OMR
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              45 phiếu/môn cho 3 kỳ kiểm tra đầu tiên (tô chuẩn, có câu sai, bỏ trống, tô nhiều, tô mờ, tẩy xóa, xoay 90°, nghiêng 5°, thiếu sáng, bóng đổ, sai mã đề). Chấm thử chạy trực tiếp qua bộ máy nhận dạng ảnh OpenCV.js thật.
+              45 phiếu/kỳ cho cả 5 kỳ kiểm tra (tô chuẩn, sai, bỏ trống, tô nhiều, tô mờ, tẩy xóa, xoay 90°, nghiêng 5°, thiếu sáng, bóng đổ, sai mã đề). Chấm thử chạy trực tiếp qua bộ máy nhận dạng ảnh OpenCV.js thật.
             </p>
           </div>
 
@@ -584,7 +588,9 @@ export const BatchGradingPage: React.FC = () => {
               <option value="exam_prac_toan12">Toán 12 – Lớp 12A5 (45 phiếu)</option>
               <option value="exam_prac_ly11">Vật lý 11 – Lớp 11A2 (45 phiếu)</option>
               <option value="exam_prac_hoa10">Hóa học 10 – Lớp 10A1 (45 phiếu)</option>
-              <option value="all_135">Toàn bộ 3 kỳ (135 phiếu)</option>
+              <option value="exam_prac_tin12">Tin học 12 – Lớp 12A5 (45 phiếu)</option>
+              <option value="exam_prac_anh11">Tiếng Anh 11 – Lớp 11A2 (45 phiếu)</option>
+              <option value="all_225">Toàn bộ 5 kỳ (225 phiếu)</option>
             </select>
 
             <button

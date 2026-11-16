@@ -24,6 +24,44 @@ export const DEFAULT_SETTINGS: AppSettings = {
   soundEnabled: true,
   hideStudentInfoOnPhach: true,
   showRankingDefault: false,
+  reportCommentBands: [
+    {
+      minScore: 9,
+      title: '9,0 – 10,0 điểm',
+      commentTemplate:
+        'Bài làm đạt kết quả rất tốt, nắm vững kiến thức trọng tâm và xử lý chính xác các câu hỏi trong đề.',
+    },
+    {
+      minScore: 8,
+      title: '8,0 – dưới 9,0 điểm',
+      commentTemplate:
+        'Bài làm đạt kết quả tốt, kiến thức vững vàng; cần rà soát thêm một số chi tiết nhỏ để tối ưu điểm số.',
+    },
+    {
+      minScore: 6.5,
+      title: '6,5 – dưới 8,0 điểm',
+      commentTemplate:
+        'Bài làm đạt mức khá, nắm được các nội dung cơ bản; nên luyện tập thêm các câu hỏi vận dụng để nâng cao kết quả.',
+    },
+    {
+      minScore: 5,
+      title: '5,0 – dưới 6,5 điểm',
+      commentTemplate:
+        'Bài làm đạt mức trung bình; cần hệ thống lại kiến thức nền tảng và đọc kỹ đề bài hơn khi làm bài.',
+    },
+    {
+      minScore: 3.5,
+      title: '3,5 – dưới 5,0 điểm',
+      commentTemplate:
+        'Bài làm chưa đạt mức yêu cầu; cần ôn tập kỹ lại các kiến thức cơ bản và luyện tập thêm dạng bài tương tự.',
+    },
+    {
+      minScore: 0,
+      title: 'Dưới 3,5 điểm',
+      commentTemplate:
+        'Kết quả còn hạn chế so với yêu cầu đề kiểm tra; nên trao đổi cùng giáo viên để được hướng dẫn củng cố kiến thức nền.',
+    },
+  ],
   vnEduColumnMap: {
     sbd: 'Số báo danh',
     fullName: 'Họ và tên',

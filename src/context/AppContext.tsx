@@ -41,7 +41,7 @@ import {
   buildPracticeAnswerKeys,
   buildPracticeClasses,
   buildPracticeExams,
-  buildPracticeSheets135,
+  buildPracticeSheets225,
   buildPracticeStudents,
   buildSimSpecForPracticeSheet,
 } from '../engine/practiceData';
@@ -85,6 +85,9 @@ interface AppContextValue {
   focusedReviewId: string | null;
   setFocusedReviewId: (id: string | null) => void;
   openReviewSubmission: (subId: string, examId?: string) => void;
+  focusedReportCardSubId: string | null;
+  setFocusedReportCardSubId: (id: string | null) => void;
+  openReportCardSubmission: (subId: string, examId?: string) => void;
   exams: Exam[];
   allExams: Exam[];
   activeExamId: string | null;
@@ -118,7 +121,8 @@ interface AppContextValue {
   deletePracticeDataset: () => Promise<void>;
   runPracticeGrading: (
     sheets: PracticeSheetSpec[],
-    onProgress?: (done: number, total: number, last?: PracticeGradeRunItem) => void
+    onProgress?: (done: number, total: number, last?: PracticeGradeRunItem) => void,
+    options?: { forceRegrade?: boolean }
   ) => Promise<PracticeGradeRunItem[]>;
 }
 
@@ -142,6 +146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     total: number;
   } | null>(null);
   const [focusedReviewId, setFocusedReviewId] = useState<string | null>(null);
+  const [focusedReportCardSubId, setFocusedReportCardSubId] = useState<string | null>(null);
 
   const [allExams, setAllExams] = useState<Exam[]>([]);
   const [activeExamId, setActiveExamIdState] = useState<string | null>(() =>
@@ -189,11 +194,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existingMap = new Map(data.templates.map((t) => [t.id, t]));
     const mergedTemplates: SheetTemplate[] = [];
     for (const bt of builtIn) {
-      if (!existingMap.has(bt.id)) {
+      const ex = existingMap.get(bt.id);
+      if (!ex || ex.version !== bt.version) {
         await saveTemplate(bt);
         mergedTemplates.push(bt);
       } else {
-        mergedTemplates.push(existingMap.get(bt.id)!);
+        mergedTemplates.push(ex);
       }
     }
     for (const t of data.templates) {
@@ -267,16 +273,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const runPracticeGrading = useCallback(
     async (
       sheets: PracticeSheetSpec[],
-      onProgress?: (done: number, total: number, last?: PracticeGradeRunItem) => void
+      onProgress?: (done: number, total: number, last?: PracticeGradeRunItem) => void,
+      options?: { forceRegrade?: boolean }
     ): Promise<PracticeGradeRunItem[]> => {
       await ensureOpenCVReady();
       const results: PracticeGradeRunItem[] = [];
       const canvas = document.createElement('canvas');
+      const existingById = new Map(allSubmissions.map((s) => [s.id, s]));
 
       try {
         for (let i = 0; i < sheets.length; i++) {
           const sheet = sheets[i];
           const t0 = performance.now();
+          const subId = `sub_prac_${sheet.id}`;
+          const existingSub = existingById.get(subId);
+
+          // Reuse valid saved result instead of re-grading unless forced or failed earlier
+          if (
+            !options?.forceRegrade &&
+            existingSub &&
+            (existingSub.status === 'graded' || existingSub.editHistory.length > 0)
+          ) {
+            const isExpectedReviewCase =
+              sheet.scenario === 'multi_mark' ||
+              sheet.scenario === 'faint_mark' ||
+              sheet.scenario === 'erased_mark' ||
+              sheet.scenario === 'wrong_exam_code';
+            const matchedExpected = isExpectedReviewCase
+              ? existingSub.status === 'needs_review'
+              : existingSub.sbd === sheet.sbd &&
+                existingSub.examCode === sheet.examCode &&
+                Math.abs(existingSub.scoreBreakdown.total - sheet.expectedScore) <= 0.05;
+
+            const cachedItem: PracticeGradeRunItem = {
+              sheet,
+              submissionId: existingSub.id,
+              detectedSbd: existingSub.sbd,
+              detectedExamCode: existingSub.examCode,
+              omrScore: existingSub.scoreBreakdown.total,
+              expectedScore: sheet.expectedScore,
+              status: existingSub.status,
+              matchedExpected,
+              durationMs: 1,
+            };
+            results.push(cachedItem);
+            onProgress?.(i + 1, sheets.length, cachedItem);
+            continue;
+          }
+
           const ex = allExams.find((e) => e.id === sheet.examId) || buildPracticeExams().find((e) => e.id === sheet.examId);
           const tpl = templates.find((t) => t.id === sheet.templateId);
           const ak = allAnswerKeys.find(
@@ -320,7 +364,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             const res = omrOutputs[0];
             const now = Date.now();
-            const subId = `sub_prac_${sheet.id}`;
             const origBlobId = `blob_prac_orig_${sheet.id}`;
             const warpBlobId = `blob_prac_warp_${sheet.id}`;
             await saveBlob(origBlobId, origUrl, 'image/jpeg');
@@ -342,10 +385,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               scoreBreakdown: res.scored.scoreBreakdown,
               status: res.status,
               reviewReasons: res.reviewReasons,
-              editHistory: [],
+              editHistory: existingSub?.editHistory || [],
+              teacherComment: existingSub?.teacherCommentLocked ? existingSub.teacherComment : undefined,
+              teacherCommentLocked: existingSub?.teacherCommentLocked,
               isPractice: true,
               practiceSheetId: sheet.id,
-              createdAt: now,
+              createdAt: existingSub?.createdAt || now,
               updatedAt: now,
             };
 
@@ -408,11 +453,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return results;
     },
-    [allExams, templates, allAnswerKeys, settings]
+    [allExams, templates, allAnswerKeys, allSubmissions, settings]
   );
 
-  // Automatic initial real-OpenCV grading of 15 representative practice sheets on first run
-  // so Overview & Gradebook show real IndexedDB + OpenCV data immediately (never fake numbers!)
+  // Automatic initial real-OpenCV grading of representative practice sheets across all 5 exams on first run
   useEffect(() => {
     if (
       !ready ||
@@ -428,16 +472,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     starterSeedLockRef.current = true;
-    const all135 = buildPracticeSheets135();
-    // Pick 6 sheets for Toán 12, 5 for Vật lý 11, 4 for Hóa học 10 across diverse scenarios
+    const all225 = buildPracticeSheets225();
     const pickFromExam = (examId: string, indices: number[]) => {
-      const subList = all135.filter((s) => s.examId === examId);
+      const subList = all225.filter((s) => s.examId === examId);
       return indices.map((i) => subList[i]).filter(Boolean);
     };
     const starterSheets = [
-      ...pickFromExam('exam_prac_toan12', [0, 1, 16, 17, 32, 34]), // std, std, wrong, wrong, multi, faint
-      ...pickFromExam('exam_prac_ly11', [0, 16, 28, 36, 44]), // std, wrong, blank, erased, wrong_code
-      ...pickFromExam('exam_prac_hoa10', [0, 1, 18, 29]), // std, std, wrong, blank
+      ...pickFromExam('exam_prac_toan12', [0, 1, 16, 17, 28, 32]),
+      ...pickFromExam('exam_prac_ly11', [0, 16, 28, 34, 44]),
+      ...pickFromExam('exam_prac_hoa10', [0, 1, 18, 29]),
+      ...pickFromExam('exam_prac_tin12', [0, 16, 28, 32]),
+      ...pickFromExam('exam_prac_anh11', [0, 16, 28, 36]),
     ];
 
     (async () => {
@@ -645,6 +690,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [setActiveExamId]
   );
 
+  const openReportCardSubmission = useCallback(
+    (subId: string, examId?: string) => {
+      if (examId) setActiveExamId(examId);
+      setFocusedReportCardSubId(subId);
+      setActivePage('report-cards');
+    },
+    [setActiveExamId]
+  );
+
   const activeExam = exams.find((e) => e.id === activeExamId) || null;
 
   return (
@@ -660,6 +714,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         focusedReviewId,
         setFocusedReviewId,
         openReviewSubmission,
+        focusedReportCardSubId,
+        setFocusedReportCardSubId,
+        openReportCardSubmission,
         exams,
         allExams,
         activeExamId,

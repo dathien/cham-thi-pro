@@ -52,6 +52,8 @@ function defaultFiducials(): FiducialConfig {
 }
 
 function buildSingleSheetBubbles(params: {
+  canvasW: number;
+  canvasH: number;
   originX: number;
   originY: number;
   areaW: number;
@@ -70,6 +72,8 @@ function buildSingleSheetBubbles(params: {
   rects: SheetTemplate['headerConfig'];
 } {
   const {
+    canvasW,
+    canvasH,
     originX,
     originY,
     areaW,
@@ -84,6 +88,10 @@ function buildSingleSheetBubbles(params: {
     part3ColsPerQuestion,
     pairedSlot,
   } = params;
+  const roundRadius = (rPx: number) => ({
+    rx: rPx / canvasW,
+    ry: rPx / canvasH,
+  });
 
   const bubbles: BubbleCoord[] = [];
   const prefix = pairedSlot ? `s${pairedSlot}_` : '';
@@ -120,8 +128,14 @@ function buildSingleSheetBubbles(params: {
 
   // Generate SBD bubbles (digits 0..9 vertically)
   const digitRows = 10;
-  const sbdRadiusX = pw(Math.min(0.0085, (sbdW / (sbdDigits + 1)) * 0.32));
-  const sbdRadiusY = ph(0.0072);
+  const sbdRPx = Math.max(
+    7,
+    Math.min(
+      pw(Math.min(0.0085, (sbdW / (sbdDigits + 1)) * 0.34)) * canvasW,
+      ph((metaHeight - 0.038) / digitRows * 0.36) * canvasH
+    )
+  );
+  const { rx: sbdRx, ry: sbdRy } = roundRadius(sbdRPx);
 
   for (let col = 0; col < sbdDigits; col++) {
     const cx = px(sbdX + ((col + 0.5) / sbdDigits) * sbdW);
@@ -134,15 +148,22 @@ function buildSingleSheetBubbles(params: {
         option: String(d),
         cx,
         cy,
-        rx: sbdRadiusX,
-        ry: sbdRadiusY,
+        rx: sbdRx,
+        ry: sbdRy,
         pairedSlot,
       });
     }
   }
 
   // Generate Exam Code bubbles (digits 0..9 vertically)
-  const examRadiusX = pw(Math.min(0.0085, (examW / (examCodeDigits + 1)) * 0.32));
+  const examRPx = Math.max(
+    7,
+    Math.min(
+      pw(Math.min(0.0085, (examW / (examCodeDigits + 1)) * 0.34)) * canvasW,
+      sbdRPx
+    )
+  );
+  const { rx: examRx, ry: examRy } = roundRadius(examRPx);
   for (let col = 0; col < examCodeDigits; col++) {
     const cx = px(examX + ((col + 0.5) / examCodeDigits) * examW);
     for (let d = 0; d < digitRows; d++) {
@@ -154,8 +175,8 @@ function buildSingleSheetBubbles(params: {
         option: String(d),
         cx,
         cy,
-        rx: examRadiusX,
-        ry: sbdRadiusY,
+        rx: examRx,
+        ry: examRy,
         pairedSlot,
       });
     }
@@ -179,7 +200,11 @@ function buildSingleSheetBubbles(params: {
       w: pw(pW),
       h: ph(metaHeight),
     };
-    const pRx = pw(Math.min(0.0085, (pW / (phachDigits + 1)) * 0.32));
+    const pRPx = Math.max(
+      7,
+      Math.min(pw(Math.min(0.0085, (pW / (phachDigits + 1)) * 0.34)) * canvasW, sbdRPx)
+    );
+    const { rx: pRx, ry: pRy } = roundRadius(pRPx);
     for (let col = 0; col < phachDigits; col++) {
       const cx = px(pX + ((col + 0.5) / phachDigits) * pW);
       for (let d = 0; d < digitRows; d++) {
@@ -192,7 +217,7 @@ function buildSingleSheetBubbles(params: {
           cx,
           cy,
           rx: pRx,
-          ry: sbdRadiusY,
+          ry: pRy,
           pairedSlot,
         });
       }
@@ -219,11 +244,11 @@ function buildSingleSheetBubbles(params: {
   if (hasP1 && !hasP2 && !hasP3) {
     p1BandH = bodyH;
   } else if (hasP1 && hasP2 && hasP3) {
-    // Typical THPT 2025 layout
+    // Balanced THPT 2025 layout giving Part III 12-row numeric grid generous spacing
     const p1RowsEst = Math.ceil(part1Count / part1Columns);
-    const p1Weight = Math.max(0.22, Math.min(0.42, p1RowsEst * 0.025));
-    const p2Weight = 0.24;
-    const p3Weight = bodyH - p1Weight - p2Weight - 0.03;
+    const p1Weight = Math.max(0.165, Math.min(0.24, p1RowsEst * 0.025 + 0.02));
+    const p2Weight = part2Count > 4 ? 0.21 : 0.155;
+    const p3Weight = Math.max(0.24, bodyH - p1Weight - p2Weight - 0.03);
     p1BandH = p1Weight;
     p2BandH = p2Weight;
     p3BandH = p3Weight;
@@ -246,15 +271,18 @@ function buildSingleSheetBubbles(params: {
     const cols = Math.max(1, part1Columns);
     const rowsPerCol = Math.ceil(part1Count / cols);
     const colW = bodyW / cols;
-    const innerTop = cursorY + 0.028;
-    const innerH = p1BandH - 0.034;
+    const innerTop = cursorY + 0.026;
+    const innerH = p1BandH - 0.032;
     const rowStep = innerH / Math.max(1, rowsPerCol);
-    const rX = pw(Math.min(0.010, (colW * 0.56) / 10));
-    const rY = ph(Math.min(0.010, rowStep * 0.34));
-    const rNorm = Math.min(rX, rY * (areaH / areaW)); // keep circle visually round in canonical px
-    const rxFinal = rNorm;
-    const ryFinal = rNorm * (areaW / areaH) * (1240 / 1754) > 0 ? Math.min(rY, rowStep * 0.36 * areaH) : rY;
-    // Better: compute exact radius in normalized canvas space preserving aspect ratio
+    const p1RPx = Math.max(
+      7,
+      Math.min(
+        pw(Math.min(0.011, (colW * 0.56) / 10)) * canvasW,
+        ph(Math.min(0.010, rowStep * 0.34)) * canvasH,
+        13.5
+      )
+    );
+    const { rx: p1Rx, ry: p1Ry } = roundRadius(p1RPx);
     const options = ['A', 'B', 'C', 'D'];
 
     for (let q = 1; q <= part1Count; q++) {
@@ -272,8 +300,8 @@ function buildSingleSheetBubbles(params: {
           option: options[oi],
           cx,
           cy,
-          rx: Math.min(rX, pw(0.010)),
-          ry: Math.min(rY, ph(0.0082)),
+          rx: p1Rx,
+          ry: p1Ry,
           pairedSlot,
         });
       }
@@ -287,8 +315,8 @@ function buildSingleSheetBubbles(params: {
     const cols = Math.min(part2Count, 4);
     const rows = Math.ceil(part2Count / cols);
     const colW = bodyW / cols;
-    const innerTop = cursorY + 0.030;
-    const innerH = p2BandH - 0.036;
+    const innerTop = cursorY + 0.028;
+    const innerH = p2BandH - 0.034;
     const rowGroupH = innerH / Math.max(1, rows);
     const subItems: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
 
@@ -297,12 +325,19 @@ function buildSingleSheetBubbles(params: {
       const rIdx = Math.floor((q - 1) / cols);
       const boxLeft = bodyLeft + cIdx * colW;
       const boxTop = innerTop + rIdx * rowGroupH;
-      const subStep = (rowGroupH - 0.022) / 4;
+      const subStep = (rowGroupH - 0.020) / 4;
+      const p2RPx = Math.max(
+        7,
+        Math.min(
+          pw(0.010) * canvasW,
+          ph(Math.min(0.0085, subStep * 0.36)) * canvasH,
+          12.5
+        )
+      );
+      const { rx: p2Rx, ry: p2Ry } = roundRadius(p2RPx);
 
       for (let si = 0; si < 4; si++) {
-        const cy = py(boxTop + 0.020 + (si + 0.5) * subStep);
-        const rx = pw(0.009);
-        const ry = ph(Math.min(0.0075, subStep * 0.36));
+        const cy = py(boxTop + 0.018 + (si + 0.5) * subStep);
         const cxTrue = px(boxLeft + colW * 0.44);
         const cxFalse = px(boxLeft + colW * 0.68);
         bubbles.push({
@@ -313,8 +348,8 @@ function buildSingleSheetBubbles(params: {
           option: 'Đ',
           cx: cxTrue,
           cy,
-          rx,
-          ry,
+          rx: p2Rx,
+          ry: p2Ry,
           pairedSlot,
         });
         bubbles.push({
@@ -325,8 +360,8 @@ function buildSingleSheetBubbles(params: {
           option: 'S',
           cx: cxFalse,
           cy,
-          rx,
-          ry,
+          rx: p2Rx,
+          ry: p2Ry,
           pairedSlot,
         });
       }
@@ -344,8 +379,15 @@ function buildSingleSheetBubbles(params: {
     // 12 rows: row 0 = '-', row 1 = ',', rows 2..11 = '0'..'9'
     const allRows = ['-', ',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     const rowStep = innerH / allRows.length;
-    const rx = pw(Math.min(0.0078, (qBoxW / (part3ColsPerQuestion + 1)) * 0.28));
-    const ry = ph(Math.min(0.0068, rowStep * 0.36));
+    const p3RPx = Math.max(
+      7.5,
+      Math.min(
+        pw(Math.min(0.0085, (qBoxW / (part3ColsPerQuestion + 1)) * 0.30)) * canvasW,
+        ph(Math.min(0.0075, rowStep * 0.36)) * canvasH,
+        11.5
+      )
+    );
+    const { rx: p3Rx, ry: p3Ry } = roundRadius(p3RPx);
 
     for (let q = 1; q <= part3Count; q++) {
       const qIdx = (q - 1) % cols;
@@ -367,8 +409,8 @@ function buildSingleSheetBubbles(params: {
             option: sym,
             cx,
             cy,
-            rx,
-            ry,
+            rx: p3Rx,
+            ry: p3Ry,
             pairedSlot,
           });
         }
@@ -376,10 +418,9 @@ function buildSingleSheetBubbles(params: {
     }
   }
 
-  // Keep rx/ry balanced to prevent ellipse distortion
   for (const b of bubbles) {
-    if (b.rx <= 0) b.rx = 0.008;
-    if (b.ry <= 0) b.ry = 0.006;
+    if (b.rx <= 0) b.rx = 8 / canvasW;
+    if (b.ry <= 0) b.ry = 8 / canvasH;
   }
 
   return {
@@ -428,6 +469,8 @@ export function buildTemplateFromSpec(spec: TemplateSpec): SheetTemplate {
     };
 
     const left = buildSingleSheetBubbles({
+      canvasW: widthPx,
+      canvasH: heightPx,
       originX: 0.0,
       originY: 0.0,
       areaW: 0.49,
@@ -442,6 +485,8 @@ export function buildTemplateFromSpec(spec: TemplateSpec): SheetTemplate {
       pairedSlot: 1,
     });
     const right = buildSingleSheetBubbles({
+      canvasW: widthPx,
+      canvasH: heightPx,
       originX: 0.51,
       originY: 0.0,
       areaW: 0.49,
@@ -458,7 +503,7 @@ export function buildTemplateFromSpec(spec: TemplateSpec): SheetTemplate {
 
     return {
       id: spec.id,
-      version: spec.version || '1.0',
+      version: spec.version || '1.1',
       name: spec.name,
       category: 'paired_a5',
       paperSize: 'A4',
@@ -490,6 +535,8 @@ export function buildTemplateFromSpec(spec: TemplateSpec): SheetTemplate {
   }
 
   const built = buildSingleSheetBubbles({
+    canvasW: widthPx,
+    canvasH: heightPx,
     originX: 0,
     originY: 0,
     areaW: 1,
@@ -506,7 +553,7 @@ export function buildTemplateFromSpec(spec: TemplateSpec): SheetTemplate {
 
   return {
     id: spec.id,
-    version: spec.version || '1.0',
+    version: spec.version || '1.1',
     name: spec.name,
     category: spec.category,
     paperSize: spec.paperSize,
