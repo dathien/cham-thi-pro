@@ -1,64 +1,99 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarDays,
+  Camera,
+  CheckSquare,
+  FileCheck2,
+  FileSpreadsheet,
+  FolderKanban,
+  Printer,
+  Users,
+} from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { NavPage } from '../types/omr';
 
-const STEPS: { step: number; title: string; desc: string; page: NavPage; cta: string }[] = [
+interface GuideStep {
+  stepNumber: string;
+  title: string;
+  description: string;
+  page: NavPage;
+  ctaLabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const GUIDE_STEPS: GuideStep[] = [
   {
-    step: 1,
+    stepNumber: '01',
     title: 'Tạo kỳ kiểm tra',
-    desc: 'Thiết lập tên trường (mặc định TRƯỜNG THPT), tên kỳ kiểm tra, môn học, khối lớp, thang điểm, ngưỡng đạt, mẫu phiếu và danh sách mã đề.',
+    description:
+      'Thiết lập tên trường, tên kỳ kiểm tra, môn học, khối lớp, thang điểm, ngưỡng đạt, mẫu phiếu và danh sách mã đề áp dụng cho kỳ thi.',
     page: 'exams',
-    cta: 'Mở Kỳ kiểm tra',
+    ctaLabel: 'Mở Kỳ kiểm tra',
+    icon: CalendarDays,
   },
   {
-    step: 2,
+    stepNumber: '02',
     title: 'Nhập danh sách học sinh',
-    desc: 'Tạo các lớp học, tải file Excel mẫu hoặc nhập trực tiếp danh sách học sinh từ Excel/CSV. Giữ nguyên số 0 ở đầu số báo danh và phát hiện trùng SBD.',
+    description:
+      'Tạo các lớp học, tải file Excel mẫu hoặc nhập trực tiếp danh sách học sinh từ Excel/CSV. Hệ thống giữ nguyên số 0 ở đầu số báo danh và phát hiện trùng SBD.',
     page: 'classes',
-    cta: 'Mở Lớp & học sinh',
+    ctaLabel: 'Mở Lớp và học sinh',
+    icon: Users,
   },
   {
-    step: 3,
+    stepNumber: '03',
     title: 'Chọn hoặc thiết kế phiếu thi',
-    desc: 'Chọn mẫu THPT từ năm 2025, mẫu truyền thống (10–100 câu), phiếu ghép đôi A5 hay phiếu rọc phách A3; hoặc tùy biến / đánh dấu trực tiếp trên mẫu tải lên.',
+    description:
+      'Chọn mẫu phiếu THPT từ năm 2025, mẫu truyền thống (10–100 câu), phiếu ghép đôi A5 hay phiếu rọc phách A3; hoặc tùy biến và đánh dấu trực tiếp trên mẫu tải lên.',
     page: 'templates',
-    cta: 'Mở Mẫu phiếu thi',
+    ctaLabel: 'Mở Mẫu phiếu thi',
+    icon: FolderKanban,
   },
   {
-    step: 4,
+    stepNumber: '04',
     title: 'Tạo mã đề và nhập đáp án',
-    desc: 'Tạo hàng loạt mã đề (101, 102...), nhập đáp án bằng bảng tương tác, dán nhanh, nhập Excel hoặc quét từ phiếu tô đáp án đã kiểm duyệt.',
+    description:
+      'Tạo hàng loạt mã đề (101, 102...), nhập đáp án bằng bảng tương tác, dán nhanh, nhập từ file Excel hoặc quét trực tiếp từ phiếu tô đáp án đã kiểm duyệt.',
     page: 'answers',
-    cta: 'Mở Đáp án & thang điểm',
+    ctaLabel: 'Mở Đáp án và thang điểm',
+    icon: CheckSquare,
   },
   {
-    step: 5,
+    stepNumber: '05',
     title: 'In phiếu cho học sinh làm bài',
-    desc: 'Xuất file PDF chuẩn kích thước A4/A5/A3 có 4 điểm định vị rõ nét và khoảng trắng an toàn để in phát cho học sinh.',
+    description:
+      'Xuất file PDF chuẩn kích thước A4, A5 hoặc A3 có 4 điểm định vị rõ nét cùng khoảng trắng an toàn để in ấn và phát trực tiếp cho học sinh.',
     page: 'templates',
-    cta: 'In mẫu phiếu',
+    ctaLabel: 'In mẫu phiếu',
+    icon: Printer,
   },
   {
-    step: 6,
+    stepNumber: '06',
     title: 'Chấm bằng Camera hoặc PDF/Ảnh',
-    desc: 'Dùng Camera điện thoại/máy tính tự động bắt 4 điểm định vị và chụp khi ổn định, hoặc tải lên hàng loạt file PDF nhiều trang và ảnh chụp.',
+    description:
+      'Dùng Camera điện thoại hoặc máy tính tự động nhận diện 4 điểm định vị và chụp khi ổn định, hoặc vào mục Chấm PDF và ảnh để tải lên hàng loạt nhiều trang bài thi.',
     page: 'camera',
-    cta: 'Mở Chấm Camera',
+    ctaLabel: 'Mở Chấm bằng Camera',
+    icon: Camera,
   },
   {
-    step: 7,
-    title: 'Kiểm duyệt các bài chưa chắc chắn',
-    desc: 'Kiểm tra các bài có dấu hiệu tô mờ, tô nhiều đáp án, tẩy xóa, thiếu điểm định vị hoặc sai SBD/Mã đề trước khi đưa vào bảng điểm chính thức.',
+    stepNumber: '07',
+    title: 'Kiểm duyệt bài thi',
+    description:
+      'Rà soát các bài có dấu hiệu tô mờ, tô nhiều đáp án, tẩy xóa, thiếu điểm định vị hoặc sai SBD/Mã đề trước khi xác nhận đưa vào bảng điểm chính thức.',
     page: 'review',
-    cta: 'Mở Kiểm duyệt bài thi',
+    ctaLabel: 'Mở Kiểm duyệt bài thi',
+    icon: FileCheck2,
   },
   {
-    step: 8,
+    stepNumber: '08',
     title: 'Xuất bảng điểm và phiếu trả bài',
-    desc: 'Xem bảng điểm, xuất Excel XLSX / CSV / mẫu cột vnEdu & SMAS, xuất phiếu trả bài PDF tiếng Việt (hoặc file ZIP cả lớp) và phân tích chất lượng đề.',
+    description:
+      'Xem bảng điểm tổng hợp, xuất Excel chuẩn, xuất PDF hoặc file ZIP phiếu trả bài cá nhân hóa cho từng học sinh và theo dõi thống kê phân tích chất lượng đề.',
     page: 'gradebook',
-    cta: 'Mở Bảng điểm',
+    ctaLabel: 'Mở Bảng điểm',
+    icon: FileSpreadsheet,
   },
 ];
 
@@ -66,39 +101,60 @@ export const GuidePage: React.FC = () => {
   const { setActivePage } = useApp();
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-[#1E293B]">Hướng dẫn sử dụng quy trình 8 bước</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Quy trình chấm thi trắc nghiệm OMR khép kín, bảo mật cục bộ và hoạt động hoàn toàn ngoại tuyến.
+    <div className="space-y-6">
+      <header className="space-y-1.5">
+        <h1 className="text-[24px] font-bold text-[#1E293B] leading-tight">
+          HƯỚNG DẪN SỬ DỤNG
+        </h1>
+        <p className="text-[15px] text-[#475569] leading-[1.65]">
+          Thực hiện 8 bước để chấm thi, kiểm duyệt và xuất kết quả một cách dễ dàng.
         </p>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {STEPS.map((item) => (
-          <div
-            key={item.step}
-            className="bg-white border border-slate-200 rounded-lg p-4 flex flex-col justify-between gap-3"
-          >
-            <div>
-              <div className="text-xs font-semibold text-[#2563EB] font-mono-num">
-                Bước {item.step}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-[16px] items-stretch">
+        {GUIDE_STEPS.map((item) => {
+          const IconComponent = item.icon;
+          return (
+            <article
+              key={item.stepNumber}
+              className="bg-white border border-slate-200 rounded-[12px] p-[20px] flex flex-col justify-between gap-5"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-[8px] bg-blue-50 text-[#2563EB] flex items-center justify-center shrink-0"
+                    aria-hidden="true"
+                  >
+                    <IconComponent className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold text-[#2563EB] tabular-nums leading-snug">
+                      Bước {item.stepNumber}
+                    </div>
+                    <h2 className="text-[18px] font-bold text-[#1E293B] leading-snug">
+                      {item.title}
+                    </h2>
+                  </div>
+                </div>
+
+                <p className="text-[15px] text-[#475569] leading-[1.65]">
+                  {item.description}
+                </p>
               </div>
-              <h2 className="text-sm font-bold text-[#1E293B] mt-0.5">{item.title}</h2>
-              <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{item.desc}</p>
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => setActivePage(item.page)}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#2563EB] hover:underline"
-              >
-                {item.cta}
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        ))}
+
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActivePage(item.page)}
+                  className="inline-flex items-center justify-center gap-2 min-h-[44px] md:min-h-[40px] px-4 py-2 rounded-[8px] bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] text-[14px] font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+                >
+                  <span>{item.ctaLabel}</span>
+                  <ArrowRight className="w-4 h-4 shrink-0" />
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </div>
   );
