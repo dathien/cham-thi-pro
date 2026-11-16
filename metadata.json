@@ -1,0 +1,6 @@
+{
+  "name": "CHẤM THI THÔNG MINH",
+  "description": "Hệ thống chấm thi trắc nghiệm OMR bằng OpenCV, quản lý kết quả và phân tích chất lượng đề kiểm tra hoạt động ngoại tuyến.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
