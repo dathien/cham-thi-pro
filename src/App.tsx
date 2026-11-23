@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { scheduleDriveSync } from './engine/googleDriveSync';
 import { Layout } from './components/Layout';
 import { AppProvider, useApp } from './context/AppContext';
 import { AnalyticsPage } from './pages/AnalyticsPage';
@@ -17,6 +18,14 @@ import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TemplateDesignerPage } from './pages/TemplateDesignerPage';
 import { TemplatesLibraryPage } from './pages/TemplatesLibraryPage';
+
+const DriveOnlineListener: React.FC = () => {
+  useEffect(() => {
+    window.addEventListener('online', scheduleDriveSync);
+    return () => window.removeEventListener('online', scheduleDriveSync);
+  }, []);
+  return null;
+};
 
 const PageRouter: React.FC = () => {
   const { ready, activePage } = useApp();
@@ -74,6 +83,7 @@ const PageRouter: React.FC = () => {
 export default function App() {
   return (
     <AppProvider>
+      <DriveOnlineListener />
       <PageRouter />
     </AppProvider>
   );
