@@ -27,13 +27,12 @@ import {
   generateBlankSheetPdf,
   type SimulatedMarkSpec,
 } from '../engine/sheetRenderer';
-import { buildTemplateFromSpec, validateThpt2025Template, THPT_2026_OFFICIAL_REFERENCE } from '../engine/templates';
+import { buildTemplateFromSpec, validateThpt2025Template } from '../engine/templates';
 import type { SheetTemplate, TemplateCategory } from '../types/omr';
 
-const CATEGORY_TABS: { id: 'all' | 'thpt2026' | 'thpt2025_only' | TemplateCategory; label: string }[] = [
+const CATEGORY_TABS: { id: 'all' | TemplateCategory; label: string }[] = [
   { id: 'all', label: 'Tất cả mẫu' },
-  { id: 'thpt2026', label: 'THPT 2026 (luyện tập)' },
-  { id: 'thpt2025_only', label: 'THPT 2025 (lưu trữ)' },
+  { id: 'thpt2025', label: 'THPT từ 2025' },
   { id: 'traditional', label: 'Truyền thống (10–100 câu)' },
   { id: 'paired_a5', label: 'Ghép đôi A5' },
   { id: 'phach_a3', label: 'Rọc phách A3' },
@@ -56,7 +55,7 @@ export const TemplatesLibraryPage: React.FC = () => {
   const [detectMessage, setDetectMessage] = useState('');
   const [detectMatches, setDetectMatches] = useState<{ id: string; name: string; fiducials: number; code: string; sbd: string }[]>([]);
   const detectFileRef = useRef<HTMLInputElement>(null);
-  const [catFilter, setCatFilter] = useState<'all' | 'thpt2026' | 'thpt2025_only' | TemplateCategory>('all');
+  const [catFilter, setCatFilter] = useState<'all' | TemplateCategory>('all');
   const [selectedId, setSelectedId] = useState<string>(templates[0]?.id || 'tpl_thpt2025_toan');
   const [customCount, setCustomCount] = useState(35);
   const [exporting, setExporting] = useState(false);
@@ -72,7 +71,7 @@ export const TemplatesLibraryPage: React.FC = () => {
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
   const filtered = templates.filter((t) =>
-    (catFilter === 'all' || (catFilter === 'thpt2026' ? t.id.startsWith('tpl_thpt2026_') : catFilter === 'thpt2025_only' ? t.id.startsWith('tpl_thpt2025_') : t.category === catFilter)) &&
+    (catFilter === 'all' || t.category === catFilter) &&
     `${t.name} ${t.id} ${t.paperSize} ${t.part1Count}`.toLocaleLowerCase('vi')
       .includes(searchText.trim().toLocaleLowerCase('vi'))
   );
@@ -444,23 +443,6 @@ export const TemplatesLibraryPage: React.FC = () => {
           className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900" />
       </div>
 
-      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2" aria-label="Mẫu phiếu chính thức THPT 2026">
-        <h2 className="text-base font-bold text-slate-900">Mẫu phiếu trả lời trắc nghiệm chính thức THPT 2026</h2>
-        <p className="text-sm leading-relaxed text-slate-800">
-          Nguồn: {THPT_2026_OFFICIAL_REFERENCE.document}. Quy cách giấy: ngang 205–210 mm,
-          dọc 295–297 mm; định lượng 100–120 g/m²; in đen và đỏ; các điểm định vị
-          quy định phải cách mép giấy tối thiểu 4,5 mm.
-        </p>
-        <a href={THPT_2026_OFFICIAL_REFERENCE.url} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-lg bg-white border border-amber-300 px-3 py-2.5 text-sm font-semibold text-blue-700 hover:bg-amber-100">
-          <Download className="w-4 h-4" /> Xem Phụ lục VI – mẫu gốc và hướng dẫn tô phiếu
-        </a>
-        <p className="text-sm font-semibold text-amber-900">
-          Các mẫu THPT 2026 bên dưới là mẫu luyện tập do ứng dụng sinh ra, không phải bản sao
-          phôi chính thức và chưa có cấu hình OMR được kiểm chứng cho phôi Bộ GD&ĐT.
-        </p>
-      </section>
-
       {/* Category Filter Tabs */}
       <div className="flex flex-wrap gap-1 p-1 bg-slate-200/70 rounded-lg w-fit">
         {CATEGORY_TABS.map((tab) => (
@@ -652,12 +634,10 @@ export const TemplatesLibraryPage: React.FC = () => {
               <p className="leading-relaxed">{selected.compatibilityNote}</p>
               <button
                 type="button"
-                disabled={selected.id.startsWith('tpl_thpt2026_')}
-                title={selected.id.startsWith('tpl_thpt2026_') ? 'Mẫu luyện tập không thể xác nhận là phôi chính thức' : undefined}
                 onClick={() => handleToggleVerified(selected)}
-                className="shrink-0 px-2.5 py-1.5 rounded border border-slate-300 bg-white text-[11px] font-medium hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="shrink-0 px-2.5 py-1.5 rounded border border-slate-300 bg-white text-[11px] font-medium hover:bg-slate-100"
               >
-                {selected.id.startsWith('tpl_thpt2026_') ? 'Mẫu luyện tập – chưa xác minh' : selected.isOfficialVerified ? 'Bỏ xác nhận đối chiếu' : 'Xác nhận đã đối chiếu bản in'}
+                {selected.isOfficialVerified ? 'Bỏ xác nhận đối chiếu' : 'Xác nhận đã đối chiếu bản in'}
               </button>
             </div>
 

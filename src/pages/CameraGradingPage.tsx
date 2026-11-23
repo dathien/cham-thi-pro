@@ -539,8 +539,9 @@ export const CameraGradingPage: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-[11px] text-slate-500">Tổng điểm</div>
-                  <div className="font-mono-num font-bold text-xl text-[#2563EB]">
-                    {lastResult.scoreBreakdown.total}
+                  <div className={`font-mono-num font-extrabold text-4xl sm:text-5xl ${lastResult.status === 'graded' ? 'text-emerald-700' : 'text-amber-600'}`} aria-live="assertive">
+                    {lastResult.status === 'graded' ? lastResult.scoreBreakdown.total.toLocaleString('vi-VN', { maximumFractionDigits: 2 }) : 'Chờ duyệt'}
+                    {lastResult.status === 'graded' && <span className="ml-1 text-base font-medium text-slate-500">/ {lastResult.scoreBreakdown.maxPossible}</span>}
                   </div>
                 </div>
                 <div>
@@ -552,6 +553,11 @@ export const CameraGradingPage: React.FC = () => {
                 </div>
               </div>
 
+              {lastResult.status === 'graded' && (
+                <div role="status" className="rounded-md bg-emerald-50 border border-emerald-200 p-3 font-semibold text-emerald-800 text-sm">
+                  Đã chấm và lưu trên thiết bị. {navigator.onLine ? 'Sẵn sàng đồng bộ Drive nếu đã bật.' : 'Ngoại tuyến – sẽ đồng bộ khi có mạng.'}
+                </div>
+              )}
               {lastResult.reviewReasons.length > 0 && (
                 <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-amber-900 space-y-1">
                   <div className="font-semibold">Lý do cần kiểm duyệt:</div>
@@ -565,9 +571,9 @@ export const CameraGradingPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    lastCapturedSbdRef.current = '';
+                    lastCapturedSignatureRef.current = '';
                     sheetPresentRef.current = true;
-            void captureAndGrade();
+                    void captureAndGrade();
                   }}
                   disabled={!cameraActive || processing}
                   className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded border border-slate-300 hover:bg-slate-50 font-medium disabled:opacity-50"

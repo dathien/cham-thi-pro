@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { connectGoogleDrive, driveConfig, syncConfirmedGrades, scheduleDriveSync } from '../engine/googleDriveSync';
 import {
   CheckCircle2,
   Database,
@@ -35,6 +36,17 @@ export const SettingsPage: React.FC = () => {
 
   const importOfficialRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<AppSettings>(settings);
+  const [googleClientId, setGoogleClientId] = useState(driveConfig.getClientId());
+  const [driveAuto, setDriveAuto] = useState(driveConfig.autoEnabled());
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveMessage, setDriveMessage] = useState('');
+  const [driveConnected, setDriveConnected] = useState(driveConfig.isConnected());
+  const driveAction = async (action: () => Promise<unknown>) => {
+    setDriveBusy(true);
+    try { const result = await action(); setDriveConnected(driveConfig.isConnected()); setDriveMessage(typeof result === 'string' ? result : 'Đã kết nối Google Drive.'); if (driveConfig.autoEnabled()) scheduleDriveSync(); }
+    catch (e) { setDriveMessage(e instanceof Error ? e.message : 'Không thể kết nối Google Drive.'); }
+    finally { setDriveBusy(false); }
+  };
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [confirmDeletePractice, setConfirmDeletePractice] = useState(false);
   const [runningTests, setRunningTests] = useState(false);
@@ -130,6 +142,23 @@ export const SettingsPage: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Google Drive: OAuth consent and official results only. */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4" aria-label="Sao lưu và đồng bộ Google Drive">
+        <h2 className="text-base font-bold text-slate-800">Sao lưu & Đồng bộ Google Drive</h2>
+        <p className="text-sm text-slate-600">Lưu bảng điểm chính thức đã xác nhận dưới dạng CSV vào thư mục CHAM THI THONG MINH. Không tải ảnh phiếu hoặc bài thực hành lên Drive. Khi mất mạng, dữ liệu vẫn lưu trên thiết bị.</p>
+        <label className="block text-sm font-medium text-slate-700">Google OAuth Client ID (người quản trị cấu hình một lần)
+          <input value={googleClientId} onChange={e => setGoogleClientId(e.target.value)} placeholder="...apps.googleusercontent.com" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <p className="text-xs text-slate-500">Có thể cấu hình sẵn biến môi trường VITE_GOOGLE_CLIENT_ID trên Vercel. Google Cloud Console cần bật Drive API và thêm miền Vercel vào Authorized JavaScript origins.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={driveBusy} onClick={() => { driveConfig.setClientId(googleClientId); void driveAction(connectGoogleDrive); }} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{driveConnected ? 'Kết nối lại Google' : 'Kết nối Google Drive'}</button>
+          <button type="button" disabled={driveBusy || !driveConnected} onClick={() => void driveAction(syncConfirmedGrades)} className="rounded-lg border border-blue-300 px-4 py-2.5 text-sm font-semibold text-blue-700 disabled:opacity-50">Đồng bộ bảng điểm ngay</button>
+          <button type="button" onClick={() => { driveConfig.disconnect(); setDriveConnected(false); setDriveMessage('Đã ngắt kết nối phiên Google Drive.'); }} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm">Ngắt kết nối</button>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={driveAuto} onChange={e => { setDriveAuto(e.target.checked); driveConfig.setAuto(e.target.checked); if (e.target.checked) scheduleDriveSync(); }} /> Tự đồng bộ bài chấm chính thức sau khi xác nhận (khi đang kết nối và có mạng)</label>
+        <p role="status" className="text-sm text-slate-700">{driveMessage || (driveConnected ? 'Đã kết nối trong phiên hiện tại.' : 'Chưa kết nối Google Drive.')}</p>
+      </section>
 
       {/* Practice & Official Data Management */}
       <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
