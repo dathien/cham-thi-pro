@@ -2,16 +2,15 @@ import React, { useMemo } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
   BookOpen,
   CalendarPlus,
-  Camera,
   CheckCircle2,
-  CheckSquare,
+  Users,
+  Settings2,
+  ClipboardList,
+  Lightbulb,
   FileCheck2,
   FileImage,
-  FileSpreadsheet,
-  FolderKanban,
   GraduationCap,
   RefreshCw,
 } from 'lucide-react';
@@ -44,6 +43,8 @@ export const OverviewPage: React.FC = () => {
   );
 
   const totalExams = exams.length;
+  const hasExams = totalExams > 0;
+  const hasSubmissions = realSubs.length > 0;
   const totalStudents = students.length;
   const totalSubmissions = realSubs.length;
   const gradedAll = useMemo(
@@ -139,54 +140,95 @@ export const OverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {/* Welcome Banner */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#2563EB]">
+      {/* Compact heading: one clear action per data state. */}
+      <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-[13px] font-semibold text-blue-700">
             <GraduationCap className="w-4 h-4" />
-            <span>
-              {dataScope === 'practice'
-                ? 'Không gian dữ liệu thực hành tích hợp sẵn'
-                : 'Không gian dữ liệu chính thức của giáo viên'}
-            </span>
+            {dataScope === 'practice' ? 'Dữ liệu thực hành' : 'Dữ liệu của tôi'}
           </div>
-          <h1 className="text-[20px] lg:text-[22px] font-bold text-[#1E293B] leading-snug">
-            Chào mừng quý Thầy Cô đến với Chấm Thi Thông Minh
-          </h1>
-          <p className="text-[13px] text-slate-600 max-w-2xl">
-            Chấm nhanh – Chính xác – Bảo mật – Miễn phí · Xử lý 100% cục bộ bằng OpenCV.js WebAssembly
-            {activeExam ? ` · Kỳ thi đang chọn: ${activeExam.name}` : ''}.
+          <h1 className="text-[22px] font-bold text-slate-900 mt-1">Tổng quan chấm thi</h1>
+          <p className="text-[14px] text-slate-600 mt-1 leading-relaxed">
+            {activeExam ? `Kỳ kiểm tra đang chọn: ${activeExam.name}` :
+              !hasExams ? 'Chưa có kỳ kiểm tra. Chọn một chức năng bên dưới để bắt đầu.' :
+              !hasSubmissions ? 'Đã có kỳ kiểm tra. Hãy chuẩn bị đáp án và bắt đầu chấm bài.' :
+              'Theo dõi kết quả chấm thi và các bài cần kiểm duyệt.'}
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setActivePage('camera')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[40px] rounded-md bg-[#2563EB] text-white text-[13px] font-medium hover:bg-blue-700 transition-colors whitespace-nowrap"
-          >
-            <Camera className="w-4 h-4" />
-            Chấm bằng Camera
+        {!hasExams ? (
+          <button type="button" onClick={() => setActivePage('exams')}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-[14px] font-semibold text-white hover:bg-blue-700 min-h-[44px]">
+            <CalendarPlus className="w-4 h-4" /> Tạo kỳ kiểm tra
           </button>
-          <button
-            type="button"
-            onClick={() => setActivePage('batch')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[40px] rounded-md bg-[#16A34A] text-white text-[13px] font-medium hover:bg-green-700 transition-colors whitespace-nowrap"
-          >
-            <FileImage className="w-4 h-4" />
-            Chấm PDF & Bộ 135 phiếu
+        ) : (
+          <button type="button" onClick={() => setActivePage('batch')}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-[14px] font-semibold text-white hover:bg-blue-700 min-h-[44px]">
+            <FileImage className="w-4 h-4" /> Chấm PDF / Ảnh
           </button>
-          {dataScope === 'official' && exams.length === 0 && (
-            <button
-              type="button"
-              onClick={() => setDataScope('practice')}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 min-h-[40px] rounded-md border border-slate-300 bg-white text-[#1E293B] text-[13px] font-medium hover:bg-slate-50 transition-colors whitespace-nowrap"
-            >
-              Mở dữ liệu thực hành
-            </button>
-          )}
-        </div>
+        )}
       </div>
+
+      {/* New users see a useful starting point instead of eight zeros and empty charts. */}
+      {!hasExams && (
+        <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 space-y-5">
+          <div className="max-w-2xl">
+            <h2 className="text-[19px] font-bold text-slate-900">Bắt đầu với Chấm Thi Thông Minh</h2>
+            <p className="text-[15px] leading-relaxed text-slate-600 mt-2">
+              Tạo kỳ kiểm tra đầu tiên, chuẩn bị phiếu hoặc khám phá dữ liệu thực hành. Các biểu đồ sẽ xuất hiện khi có bài thi đã được duyệt.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {[
+              { id: 'exams' as const, icon: CalendarPlus, title: 'Kỳ kiểm tra', detail: 'Tạo kỳ kiểm tra, chọn môn và lớp học', color: 'text-blue-700 bg-blue-50' },
+              { id: 'templates' as const, icon: FileCheck2, title: 'Mẫu phiếu thi', detail: 'Xem rõ, tải và in phiếu trả lời', color: 'text-emerald-700 bg-emerald-50' },
+              { id: 'classes' as const, icon: Users, title: 'Lớp học & SBD', detail: 'Nhập học sinh và quản lý số báo danh', color: 'text-orange-700 bg-orange-50' },
+              { id: 'settings' as const, icon: Settings2, title: 'Cài đặt hệ thống', detail: 'Thiết lập nhận diện và chế độ hiển thị', color: 'text-violet-700 bg-violet-50' },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button key={item.id} type="button" onClick={() => setActivePage(item.id)}
+                  className="text-left rounded-xl border border-slate-200 bg-white p-4 min-h-[146px] hover:border-blue-300 hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 transition-all">
+                  <span className={`inline-flex p-2 rounded-lg ${item.color}`}><Icon className="w-5 h-5" /></span>
+                  <span className="block mt-3 text-[15px] font-semibold text-slate-900">{item.title}</span>
+                  <span className="block mt-1 text-[14px] leading-relaxed text-slate-600">{item.detail}</span>
+                </button>
+              );
+            })}
+          </div>
+          {dataScope === 'official' && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4">
+              <div className="flex-1 text-[14px] leading-relaxed text-slate-700">
+                <strong>Muốn thử trước?</strong> Dữ liệu thực hành được lưu riêng, không trộn vào dữ liệu chính thức.
+              </div>
+              <button type="button" onClick={() => setDataScope('practice')}
+                className="shrink-0 rounded-lg border border-blue-300 bg-white px-4 py-2.5 min-h-[44px] text-[14px] font-semibold text-blue-700 hover:bg-blue-100">
+                Mở dữ liệu thực hành
+              </button>
+            </div>
+          )}
+          <div className="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-[14px] leading-relaxed text-slate-700">
+            <Lightbulb className="w-5 h-5 shrink-0 text-amber-600" />
+            <span>Mẹo: Khi chấm bằng Camera, đặt phiếu đủ sáng và giữ trọn bốn góc định vị trong khung hình.</span>
+          </div>
+        </section>
+      )}
+
+      {hasExams && !hasSubmissions && (
+        <section className="rounded-xl border border-blue-200 bg-blue-50/60 p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <ClipboardList className="w-6 h-6 text-blue-700 shrink-0" />
+            <div>
+              <h2 className="text-[17px] font-bold text-slate-900">Sẵn sàng chấm kỳ kiểm tra đầu tiên</h2>
+              <p className="text-[14px] text-slate-700 mt-1 leading-relaxed">Đã có {totalExams} kỳ kiểm tra nhưng chưa có bài thi được lưu. Chuẩn bị đáp án, sau đó chọn Camera hoặc PDF/Ảnh để bắt đầu.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setActivePage('answers')} className="rounded-lg bg-white border border-blue-200 px-4 py-2.5 text-[14px] font-semibold text-blue-800 hover:bg-blue-100 min-h-[44px]">Đáp án & thang điểm</button>
+            <button type="button" onClick={() => setActivePage('camera')} className="rounded-lg bg-blue-600 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-blue-700 min-h-[44px]">Chấm bằng Camera</button>
+            <button type="button" onClick={() => setActivePage('batch')} className="rounded-lg bg-white border border-blue-200 px-4 py-2.5 text-[14px] font-semibold text-blue-800 hover:bg-blue-100 min-h-[44px]">Chấm PDF / Ảnh</button>
+          </div>
+        </section>
+      )}
 
       {starterSeedingStatus?.active && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3 text-[13px] text-blue-900">
@@ -203,6 +245,8 @@ export const OverviewPage: React.FC = () => {
         </div>
       )}
 
+      {hasSubmissions && (
+        <>
       {/* Dynamic 8 KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
         <div className="bg-white border border-slate-200 rounded-lg p-4">
@@ -257,34 +301,20 @@ export const OverviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-[#1E293B] mb-3">Thao tác nhanh</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          {[
-            { id: 'exams' as const, label: 'Kỳ kiểm tra', icon: CalendarPlus },
-            { id: 'templates' as const, label: 'Mẫu phiếu thi', icon: FolderKanban },
-            { id: 'answers' as const, label: 'Đáp án & thang điểm', icon: CheckSquare },
-            { id: 'batch' as const, label: 'Chấm PDF / Ảnh', icon: FileImage },
-            { id: 'gradebook' as const, label: 'Bảng điểm', icon: FileSpreadsheet },
-            { id: 'analytics' as const, label: 'Phân tích đề', icon: BarChart3 },
-          ].map((btn) => {
-            const Icon = btn.icon;
-            return (
-              <button
-                key={btn.id}
-                type="button"
-                onClick={() => setActivePage(btn.id)}
-                className="flex items-center gap-2 px-3 py-2.5 min-h-[40px] rounded-md border border-slate-200 bg-slate-50/70 hover:bg-blue-50 hover:border-blue-200 hover:text-[#2563EB] text-[13px] font-medium text-[#1E293B] transition-colors text-left"
-              >
-                <Icon className="w-4 h-4 shrink-0 text-[#2563EB]" />
-                <span className="truncate">{btn.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+        </>
+      )}
 
+      {hasSubmissions && gradedCount === 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div>
+            <h2 className="text-[16px] font-semibold text-slate-900">Đã nhận {totalSubmissions} bài thi</h2>
+            <p className="text-[14px] leading-relaxed text-slate-700 mt-1">{reviewCount > 0 ? `${reviewCount} bài đang chờ kiểm duyệt.` : 'Chưa có bài được duyệt.'} Phổ điểm và thống kê kết quả chỉ xuất hiện sau khi có bài đã duyệt.</p>
+          </div>
+          {reviewCount > 0 && <button type="button" onClick={() => setActivePage('review')} className="rounded-lg bg-amber-600 text-white px-4 py-2.5 min-h-[44px] text-[14px] font-semibold hover:bg-amber-700 shrink-0">Kiểm duyệt bài thi</button>}
+        </div>
+      )}
+      {hasSubmissions && gradedCount > 0 && (
+        <>
       {/* Charts Row: Score Histogram + Grading Progress */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-4 space-y-4">
@@ -422,8 +452,11 @@ export const OverviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Bottom Row: Recent Exams & Pending Review Queue */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        </>
+      )}
+
+      {/* Only show meaningful lists, never two empty panels. */}
+      {hasExams && (hasSubmissions || gradedCount > 0) && <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Recent Exams */}
         <div className="lg:col-span-6 bg-white border border-slate-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
@@ -493,7 +526,7 @@ export const OverviewPage: React.FC = () => {
         </div>
 
         {/* Pending Review Submissions */}
-        <div className="lg:col-span-6 bg-white border border-slate-200 rounded-lg p-4">
+        {reviewCount > 0 && <div className="lg:col-span-6 bg-white border border-slate-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-[#1E293B]">
               Bài thi cần kiểm duyệt ({reviewCount})
@@ -544,8 +577,8 @@ export const OverviewPage: React.FC = () => {
               })}
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      </div>}
     </div>
   );
 };
