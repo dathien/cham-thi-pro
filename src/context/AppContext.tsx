@@ -1,3 +1,4 @@
+import { scheduleDriveSync } from '../engine/googleDriveSync';
 import React, {
   createContext,
   useCallback,
@@ -261,6 +262,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isPractice: sub.isPractice ?? dataScope === 'practice',
       };
       await saveSubmission(tagged);
+      if (!tagged.isPractice && tagged.status === 'graded') scheduleDriveSync();
       setAllSubmissions((prev) => {
         const idx = prev.findIndex((s) => s.id === tagged.id);
         return idx >= 0 ? prev.map((s) => (s.id === tagged.id ? tagged : s)) : [tagged, ...prev];
