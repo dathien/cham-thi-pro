@@ -45,6 +45,7 @@ export const OverviewPage: React.FC = () => {
   const totalExams = exams.length;
   const hasExams = totalExams > 0;
   const hasSubmissions = realSubs.length > 0;
+  const hasReviewedResults = realSubs.some((s) => s.status === 'graded');
   const totalStudents = students.length;
   const totalSubmissions = realSubs.length;
   const gradedAll = useMemo(
@@ -140,6 +141,11 @@ export const OverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {/* Visible release marker to distinguish the new dashboard from cached releases. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5">
+        <span className="text-[14px] font-semibold text-blue-900">Tổng quan mới · Giao diện thích ứng dữ liệu · 23/11/2026</span>
+        <span className="text-[13px] text-blue-700">{dataScope === 'practice' ? 'Dữ liệu thực hành' : 'Dữ liệu của tôi'}</span>
+      </div>
       {/* Compact heading: one clear action per data state. */}
       <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="min-w-0">
@@ -152,6 +158,7 @@ export const OverviewPage: React.FC = () => {
             {activeExam ? `Kỳ kiểm tra đang chọn: ${activeExam.name}` :
               !hasExams ? 'Chưa có kỳ kiểm tra. Chọn một chức năng bên dưới để bắt đầu.' :
               !hasSubmissions ? 'Đã có kỳ kiểm tra. Hãy chuẩn bị đáp án và bắt đầu chấm bài.' :
+              !hasReviewedResults ? 'Có bài thi cần xử lý. Chưa có kết quả được duyệt để thống kê.' :
               'Theo dõi kết quả chấm thi và các bài cần kiểm duyệt.'}
           </p>
         </div>
