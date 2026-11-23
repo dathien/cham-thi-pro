@@ -671,7 +671,7 @@ export const TemplatesLibraryPage: React.FC = () => {
               />
             </div>
           </div>
-        )}
+        )} 
       </div>
       {fullscreenPreview && selected && (
         <div role="dialog" aria-modal="true" aria-label={`Xem lớn mẫu phiếu ${selected.name}`}
