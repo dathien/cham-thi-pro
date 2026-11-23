@@ -9,6 +9,8 @@ import {
   Plus,
   Printer,
   ShieldAlert,
+  Search,
+  Upload,
   Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -41,6 +43,11 @@ export const TemplatesLibraryPage: React.FC = () => {
     upsertExam,
     setActivePage,
   } = useApp();
+  const [searchText, setSearchText] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  const [detectMessage, setDetectMessage] = useState('');
+  const [detectMatches, setDetectMatches] = useState<{ id: string; name: string; fiducials: number; code: string; sbd: string }[]>([]);
+  const detectFileRef = useRef<HTMLInputElement>(null);
   const [catFilter, setCatFilter] = useState<'all' | TemplateCategory>('all');
   const [selectedId, setSelectedId] = useState<string>(templates[0]?.id || 'tpl_thpt2025_toan');
   const [customCount, setCustomCount] = useState(35);
@@ -51,7 +58,9 @@ export const TemplatesLibraryPage: React.FC = () => {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const filtered = templates.filter((t) =>
-    catFilter === 'all' ? true : t.category === catFilter
+    (catFilter === 'all' || t.category === catFilter) &&
+    `${t.name} ${t.id} ${t.paperSize} ${t.part1Count}`.toLocaleLowerCase('vi')
+      .includes(searchText.trim().toLocaleLowerCase('vi'))
   );
   const selected = templates.find((t) => t.id === selectedId) || filtered[0] || templates[0];
 
@@ -107,6 +116,61 @@ export const TemplatesLibraryPage: React.FC = () => {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, activeExam, showFilledPreview]);
+
+  const handleDetectTemplate = async (file: File) => {
+    if (opencvStatus !== 'ready') {
+      setDetectMessage('OpenCV chưa sẵn sàng. Vui lòng đợi tải bộ máy nhận dạng.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setDetectMessage('Hãy chọn ảnh JPG, PNG hoặc WEBP. PDF nhiều trang được xử lý tại mục Chấm PDF/Ảnh.');
+      return;
+    }
+    setDetecting(true);
+    setDetectMatches([]);
+    setDetectMessage('Đang kiểm tra các mẫu đã đăng ký. Chưa có kết quả chấm chính thức.');
+    let url = '';
+    try {
+      url = URL.createObjectURL(file);
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const matches: { id: string; name: string; fiducials: number; code: string; sbd: string }[] = [];
+      for (const tpl of templates) {
+        try {
+          const result = await processSheetImageWithOpenCV(canvas, tpl, [], settings);
+          if (result.length && result.every(r => r.qualityMetrics.detectedFiducials === 4)) {
+            matches.push({
+              id: tpl.id,
+              name: tpl.name,
+              fiducials: Math.min(...result.map(r => r.qualityMetrics.detectedFiducials)),
+              code: result[0].recognition.examCode,
+              sbd: result[0].recognition.sbd,
+            });
+          }
+        } catch {
+          // Mẫu không tương thích: tiếp tục kiểm tra các mẫu khác.
+        }
+      }
+      setDetectMatches(matches);
+      setDetectMessage(matches.length === 0
+        ? 'Không tìm thấy mẫu có đủ bốn điểm định vị. Hãy chọn mẫu thủ công hoặc thiết kế mẫu mới.'
+        : matches.length === 1
+          ? 'Tìm thấy một mẫu ứng viên. Kiểm tra ảnh phiếu và mã đề trước khi chọn sử dụng.'
+          : `Có ${matches.length} mẫu cùng đạt điều kiện định vị. Chưa thể tự kết luận: hãy kiểm tra và chọn đúng mẫu.`);
+    } catch (err) {
+      setDetectMessage(err instanceof Error ? err.message : 'Không đọc được ảnh.');
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+      setDetecting(false);
+      if (detectFileRef.current) detectFileRef.current.value = '';
+    }
+  };
 
   const handleDownloadPdf = async () => {
     if (!selected) return;
@@ -290,6 +354,43 @@ export const TemplatesLibraryPage: React.FC = () => {
         </div>
       </div>
 
+      <section className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3" aria-label="Kiểm tra mẫu phiếu từ ảnh">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">Kiểm tra mẫu phiếu từ ảnh</h2>
+          <p className="text-sm leading-relaxed text-slate-700 mt-1">
+            Tải ảnh phiếu để đối chiếu các mẫu đã đăng ký bằng OpenCV. Kết quả chỉ là gợi ý,
+            chưa thay thế xác nhận của giáo viên. Mẫu ngoài thư viện cần thiết lập tọa độ trước khi chấm.
+          </p>
+        </div>
+        <input ref={detectFileRef} type="file" accept="image/png,image/jpeg,image/webp"
+          className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) void handleDetectTemplate(file); }} />
+        <button type="button" disabled={detecting || opencvStatus !== 'ready'}
+          onClick={() => detectFileRef.current?.click()}
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+          <Upload className="h-4 w-4" />
+          {detecting ? 'Đang kiểm tra...' : 'Tải ảnh để nhận diện mẫu'}
+        </button>
+        {detectMessage && <p role="status" className="text-sm text-slate-800">{detectMessage}</p>}
+        {detectMatches.map(m => (
+          <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white p-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">{m.name}</p>
+              <p className="text-sm text-slate-600">Định vị: {m.fiducials}/4 · SBD đọc được: {m.sbd} · Mã đề: {m.code}</p>
+            </div>
+            <button type="button" onClick={() => { setSelectedId(m.id); setCatFilter('all'); setSearchText(''); }}
+              className="rounded-md border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+              Xem và kiểm tra mẫu
+            </button>
+          </div>
+        ))}
+      </section>
+      <div className="relative max-w-lg">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <input value={searchText} onChange={e => setSearchText(e.target.value)}
+          placeholder="Tìm theo tên, mã mẫu, số câu..." aria-label="Tìm mẫu phiếu"
+          className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900" />
+      </div>
+
       {/* Category Filter Tabs */}
       <div className="flex flex-wrap gap-1 p-1 bg-slate-200/70 rounded-lg w-fit">
         {CATEGORY_TABS.map((tab) => (
@@ -311,6 +412,7 @@ export const TemplatesLibraryPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Template List */}
         <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-[700px] overflow-y-auto">
+          {filtered.length === 0 && <p className="p-5 text-sm text-slate-600">Không tìm thấy mẫu phù hợp. Hãy thay đổi từ khóa hoặc nhóm mẫu.</p>}
           {filtered.map((tpl) => {
             const isSel = selected?.id === tpl.id;
             const isUsed = activeExam?.templateId === tpl.id;
