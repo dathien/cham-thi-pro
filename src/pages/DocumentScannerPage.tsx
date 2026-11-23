@@ -47,6 +47,9 @@ export const DocumentScannerPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [pages, setPages] = useState<ScannedPage[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const imageLoadToken = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -57,15 +60,22 @@ export const DocumentScannerPage: React.FC = () => {
   }, []);
 
   const loadImageAndDetect = async (dataUrl: string) => {
+    const token = ++imageLoadToken.current;
+    setErrorMessage('');
     setSourceUrl(dataUrl);
     setProcessedUrl(null);
-    const detected = await detectDocumentCorners(dataUrl);
-    setCorners(detected);
+    try {
+      const detected = await detectDocumentCorners(dataUrl);
+      if (token === imageLoadToken.current) setCorners(detected);
+    } catch {
+      if (token === imageLoadToken.current) setErrorMessage('Không tự tìm được bốn góc. Hãy kéo các điểm định vị thủ công.');
+    }
   };
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith('image/')) { setErrorMessage('Vui lòng chọn tệp ảnh JPG, PNG hoặc WEBP.'); return; }
     const reader = new FileReader();
     reader.onload = () => loadImageAndDetect(String(reader.result));
     reader.readAsDataURL(file);
@@ -88,6 +98,7 @@ export const DocumentScannerPage: React.FC = () => {
       }, 60);
     } catch {
       setCameraOpen(false);
+      setErrorMessage('Không mở được Camera. Kiểm tra quyền truy cập, kết nối HTTPS và thiết bị Camera.');
     }
   };
 
@@ -164,6 +175,7 @@ export const DocumentScannerPage: React.FC = () => {
   const handleRunScan = async () => {
     if (!sourceUrl) return;
     setProcessing(true);
+    setErrorMessage('');
     try {
       const out = await processDocumentScan(sourceUrl, corners, {
         rotationDeg,
@@ -173,6 +185,8 @@ export const DocumentScannerPage: React.FC = () => {
         denoise,
       });
       setProcessedUrl(out);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Không xử lý được ảnh. Hãy kiểm tra lại bốn góc giấy.');
     } finally {
       setProcessing(false);
     }
@@ -195,10 +209,13 @@ export const DocumentScannerPage: React.FC = () => {
   const handleExportMultiPagePdf = async () => {
     const items = pages.length > 0 ? pages : processedUrl ? [{ processedUrl }] : [];
     if (items.length === 0) return;
+    setExporting(true);
+    setErrorMessage('');
+    try {
     const pdf = await PDFDocument.create();
     for (const p of items) {
       const bytes = await fetch(p.processedUrl).then((r) => r.arrayBuffer());
-      const img = await pdf.embedJpg(bytes);
+      const img = p.processedUrl.startsWith('data:image/png') ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
       // Export at A4 proportion matching aspect
       const isLandscape = img.width > img.height;
       const pw = isLandscape ? 841.89 : 595.28;
@@ -221,7 +238,20 @@ export const DocumentScannerPage: React.FC = () => {
     a.href = url;
     a.download = `tai_lieu_scan_${Date.now()}.pdf`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Không xuất được PDF.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const downloadProcessedImage = () => {
+    if (!processedUrl) return;
+    const a = document.createElement('a');
+    a.href = processedUrl;
+    a.download = `scan_${Date.now()}.${processedUrl.startsWith('data:image/png') ? 'png' : 'jpg'}`;
+    a.click();
   };
 
   return (
@@ -229,7 +259,7 @@ export const DocumentScannerPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-[#1E293B]">Scan tài liệu thông minh</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-sm text-slate-600 mt-0.5">
             Phát hiện & kéo chỉnh 4 góc giấy, hiệu chỉnh phối cảnh, khử bóng mà vẫn giữ nét bút chì mờ, ghép nhiều trang thành PDF.
           </p>
         </div>
@@ -261,15 +291,16 @@ export const DocumentScannerPage: React.FC = () => {
           <button
             type="button"
             onClick={handleExportMultiPagePdf}
-            disabled={pages.length === 0 && !processedUrl}
+            disabled={(pages.length === 0 && !processedUrl) || exporting}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-[#2563EB] text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            Xuất PDF ({pages.length > 0 ? `${pages.length} trang` : 'trang hiện tại'})
+            {exporting ? 'Đang xuất PDF...' : `Xuất PDF (${pages.length > 0 ? `${pages.length} trang` : 'trang hiện tại'})`}
           </button>
         </div>
       </div>
 
+      {errorMessage && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{errorMessage}</div>}
       {cameraOpen && (
         <div className="bg-slate-900 rounded-lg p-4 space-y-3">
           <video ref={videoRef} playsInline muted className="w-full max-h-[420px] object-contain mx-auto" />
@@ -380,6 +411,10 @@ export const DocumentScannerPage: React.FC = () => {
 
           {processedUrl && (
             <div className="pt-2 border-t border-slate-100 space-y-2">
+              <button type="button" onClick={downloadProcessedImage}
+                className="w-full rounded border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
+                Tải ảnh đã xử lý (JPG/PNG)
+              </button>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -409,7 +444,10 @@ export const DocumentScannerPage: React.FC = () => {
 
           {pages.length > 0 && (
             <div className="pt-3 border-t border-slate-100 space-y-2">
-              <div className="font-semibold text-slate-700">Danh sách trang đã ghép ({pages.length})</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-slate-700">Danh sách trang đã ghép ({pages.length})</div>
+                <button type="button" onClick={() => setPages([])} className="text-sm font-semibold text-red-700 underline">Xóa tất cả trang</button>
+              </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {pages.map((p, i) => (
                   <div
@@ -434,7 +472,7 @@ export const DocumentScannerPage: React.FC = () => {
         {/* Interactive Corner / Result Canvas */}
         <div className="lg:col-span-8 bg-slate-100 border border-slate-200 rounded-lg p-4 flex flex-col items-center justify-center min-h-[440px]">
           {!sourceUrl ? (
-            <div className="text-center text-xs text-slate-500 space-y-2">
+            <div className="text-center text-sm text-slate-600 space-y-2">
               <ScanLine className="w-10 h-10 text-slate-400 mx-auto" />
               <div>Hãy chụp ảnh hoặc chọn ảnh tài liệu để bắt đầu kéo chỉnh 4 góc.</div>
             </div>
@@ -452,7 +490,7 @@ export const DocumentScannerPage: React.FC = () => {
               </div>
               <canvas
                 ref={canvasRef}
-                onMouseDown={(e) => {
+                onPointerDown={(e) => {
                   if (!canvasRef.current) return;
                   const rect = canvasRef.current.getBoundingClientRect();
                   const nx = (e.clientX - rect.left) / rect.width;
@@ -466,12 +504,12 @@ export const DocumentScannerPage: React.FC = () => {
                       bestIdx = idx;
                     }
                   });
-                  if (bestD < 0.08) setDraggingCorner(bestIdx);
+                  if (bestD < 0.08) { setDraggingCorner(bestIdx); e.currentTarget.setPointerCapture(e.pointerId); }
                 }}
-                onMouseMove={(e) => updateCornerPointer(e.clientX, e.clientY)}
-                onMouseUp={() => setDraggingCorner(null)}
-                onMouseLeave={() => setDraggingCorner(null)}
-                className="max-w-full max-h-[580px] cursor-crosshair bg-white shadow-sm border border-slate-300"
+                onPointerMove={(e) => updateCornerPointer(e.clientX, e.clientY)}
+                onPointerUp={() => setDraggingCorner(null)}
+                onPointerCancel={() => setDraggingCorner(null)}
+                className="max-w-full max-h-[580px] cursor-crosshair touch-none bg-white shadow-sm border border-slate-300"
               />
             </div>
           )}

@@ -314,11 +314,16 @@ export const AnalyticsPage: React.FC = () => {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
           <div>
             <h1 className="text-[21px] font-bold text-[#1E293B]">Thống kê & Phân tích chất lượng đề thi</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-sm leading-relaxed text-slate-600 mt-1">
               Chỉ tổng hợp từ bài đã kiểm duyệt chính thức (N ={' '}
               <strong className="font-mono-num text-[#16A34A]">{reportData.summary.presentCount}</strong>). Bài chờ
               kiểm duyệt ({reportData.reviewCount}) và học sinh vắng ({reportData.summary.absentCount}) được tách riêng.
             </p>
+            {reportData.summary.presentCount === 0 && (
+              <p role="status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Chưa có bài đã duyệt để tính phổ điểm và các chỉ số thống kê. Hãy kiểm duyệt bài thi tại mục Kiểm duyệt trước khi sử dụng báo cáo.
+              </p>
+            )}
           </div>
           <div className="inline-flex rounded border border-slate-300 bg-slate-50 p-0.5 text-xs w-fit">
             <button

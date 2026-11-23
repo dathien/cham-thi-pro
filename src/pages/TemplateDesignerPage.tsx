@@ -28,6 +28,7 @@ export const TemplateDesignerPage: React.FC = () => {
   const [mode, setMode] = useState<'parametric' | 'overlay'>('parametric');
   const [baseId, setBaseId] = useState<string>(templates[0]?.id || 'tpl_thpt2025_toan');
   const [tplName, setTplName] = useState('Mẫu phiếu thiết kế mới');
+  const newTemplateIdRef = useRef(`tpl_custom_${Date.now()}`);
   const [tplVersion, setTplVersion] = useState('1.0');
   const [category, setCategory] = useState<TemplateCategory>('custom');
   const [paperSize, setPaperSize] = useState<PaperSize>('A4');
@@ -60,7 +61,7 @@ export const TemplateDesignerPage: React.FC = () => {
   // Build live parametric template directly using the exact OMR engine generator
   const liveTemplate: SheetTemplate = React.useMemo(() => {
     const spec = buildTemplateFromSpec({
-      id: baseId.startsWith('tpl_custom_') ? baseId : `tpl_custom_${Date.now()}`,
+      id: baseId.startsWith('tpl_custom_') ? baseId : newTemplateIdRef.current,
       version: tplVersion,
       name: tplName,
       category,
@@ -74,7 +75,7 @@ export const TemplateDesignerPage: React.FC = () => {
       part2Count,
       part3Count,
       isBuiltIn: false,
-      isOfficialVerified: true,
+      isOfficialVerified: false,
     });
 
     if (mode === 'overlay' && externalBgUrl) {
@@ -261,17 +262,23 @@ export const TemplateDesignerPage: React.FC = () => {
   };
 
   const handleSaveTemplate = async () => {
+    if (!tplName.trim()) { setNotice('Hãy nhập tên mẫu phiếu trước khi lưu.'); return; }
+    if (mode === 'overlay' && externalBgUrl && (overlayFiducials.length !== 4 || overlayBubbles.length === 0)) {
+      setNotice('Mẫu ngoài cần đủ bốn điểm định vị và ít nhất một ô trả lời đã gán tọa độ.');
+      return;
+    }
     const id = baseId.startsWith('tpl_custom_') ? baseId : `tpl_custom_${Date.now()}`;
     const toSave: SheetTemplate = {
       ...liveTemplate,
       id,
       name: tplName.trim() || 'Mẫu phiếu tùy chỉnh',
       isBuiltIn: false,
+      isOfficialVerified: false,
       updatedAt: Date.now(),
     };
     await upsertTemplate(toSave);
     setBaseId(id);
-    setNotice(`Đã lưu mẫu "${toSave.name}" (ID: ${id}) vào IndexedDB.`);
+    setNotice(`Đã lưu mẫu "${toSave.name}" (ID: ${id}). Đây là mẫu tùy chỉnh chưa xác minh chính thức; hãy in và chấm thử trước khi sử dụng.`);
   };
 
   const handleExportPdf = async () => {
@@ -291,6 +298,9 @@ export const TemplateDesignerPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+        Mẫu do giáo viên thiết kế chưa được xác minh là mẫu chính thức. Sau khi lưu, hãy in thử và kiểm tra bốn điểm định vị, SBD, mã đề, vùng tô và kết quả chấm trước khi dùng trong kỳ kiểm tra.
+      </div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-[#1E293B]">Trình thiết kế phiếu thi</h1>

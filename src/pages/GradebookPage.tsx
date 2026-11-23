@@ -793,6 +793,11 @@ export const GradebookPage: React.FC = () => {
         ? examSubmissions.filter((s) => selectedIds.has(s.id))
         : filteredRows.filter((r) => r.submission).map((r) => r.submission!);
 
+    if (selectedSubs.length === 0) {
+      setNotice({ type: 'warn', text: 'Không có bài thi trong phạm vi xuất. Hãy thay đổi bộ lọc hoặc chọn bài thi.' });
+      return;
+    }
+    try {
     await exportExamGradebookXLSX({
       exam: activeExam,
       allSubmissionsForExam: examSubmissions,
@@ -804,8 +809,12 @@ export const GradebookPage: React.FC = () => {
       hasPart3,
       hasPhach,
       format,
-      includeAllForExam: true,
+      includeAllForExam: false,
     });
+    setNotice({ type: 'ok', text: `Đã tạo bảng điểm ${format.toUpperCase()} cho ${selectedSubs.length} bài trong phạm vi chọn.` });
+    } catch (err) {
+      setNotice({ type: 'warn', text: `Xuất bảng điểm thất bại: ${err instanceof Error ? err.message : 'Lỗi không xác định'}` });
+    }
   };
 
   const handleExportGradebookPdf = async () => {
@@ -926,6 +935,7 @@ export const GradebookPage: React.FC = () => {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[21px] font-bold text-[#1E293B]">Bảng điểm kỳ kiểm tra</h1>
+            <p className="mt-1 text-sm text-slate-600">Chọn bài hoặc lọc kết quả trước khi xuất. Bài chờ kiểm duyệt không được tự động chuyển thành điểm chính thức.</p>
             <span
               className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                 dataScope === 'practice'

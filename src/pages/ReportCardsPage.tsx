@@ -486,6 +486,9 @@ export const ReportCardsPage: React.FC = () => {
               );
         downloadPdfBytes(bytes, fname);
       }
+      setNotice(`Đã chuẩn bị ${targets.length} phiếu trả bài.`);
+    } catch (err) {
+      setNotice(`Không tạo được PDF: ${err instanceof Error ? err.message : 'Lỗi không xác định'}`);
     } finally {
       setBusyAction(null);
     }
@@ -519,6 +522,9 @@ export const ReportCardsPage: React.FC = () => {
       );
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setNotice(`Đã đóng gói ${targets.length} phiếu trả bài vào ZIP.`);
+    } catch (err) {
+      setNotice(`Không tạo được ZIP: ${err instanceof Error ? err.message : 'Lỗi không xác định'}`);
     } finally {
       setBusyAction(null);
     }
@@ -572,6 +578,7 @@ export const ReportCardsPage: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
         <div>
           <h1 className="text-[21px] font-bold text-[#1E293B]">Phiếu trả bài cá nhân hóa</h1>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">Xuất phiếu PDF từng học sinh, theo nhóm hoặc cả lớp. Kiểm tra trạng thái kiểm duyệt và nội dung nhận xét trước khi phát hành cho học sinh.</p>
           <p className="text-xs text-slate-500 mt-0.5">
             {activeExam.name} · Môn {activeExam.subject} · Hỗ trợ 4 mẫu phiếu, 3 chế độ ảnh, khổ A4 / A5 / 2×A5.
           </p>
