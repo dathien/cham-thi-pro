@@ -470,7 +470,7 @@ export const TemplatesLibraryPage: React.FC = () => {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Template List */}
-        <div className={`${hideTemplateList ? 'hidden' : 'lg:col-span-5'} bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-[700px] overflow-y-auto">
+        <div className={`${hideTemplateList ? 'hidden' : 'lg:col-span-5'} bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-[700px] overflow-y-auto`}>
           {filtered.length === 0 && <p className="p-5 text-sm text-slate-600">Không tìm thấy mẫu phù hợp. Hãy thay đổi từ khóa hoặc nhóm mẫu.</p>}
           {filtered.map((tpl) => {
             const isSel = selected?.id === tpl.id;
