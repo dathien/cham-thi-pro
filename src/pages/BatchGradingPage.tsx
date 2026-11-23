@@ -59,6 +59,7 @@ export const BatchGradingPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef(false);
   const pauseRef = useRef(false);
+  const runningRef = useRef(false);
 
   const [selectedTplId, setSelectedTplId] = useState<string>(
     activeExam?.templateId || templates[0]?.id || ''
@@ -69,6 +70,7 @@ export const BatchGradingPage: React.FC = () => {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [workerReady, setWorkerReady] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [importNotice, setImportNotice] = useState('');
 
   // Practice 135-sheet batch tester state
   const [practiceSubset, setPracticeSubset] = useState<string>('exam_prac_toan12');
@@ -166,14 +168,25 @@ export const BatchGradingPage: React.FC = () => {
   };
 
   const enqueueFiles = async (files: FileList | File[]) => {
+    if (runningRef.current) return;
     const newTasks: QueueTask[] = [];
+    const errors: string[] = [];
+    const existing = new Set(queue.map(t => `${t.file.name}|${t.file.size}|${t.file.lastModified}|${t.pageNumber || 0}`));
+    const incoming = new Set<string>();
+    const addTask = (task: QueueTask) => {
+      const key = `${task.file.name}|${task.file.size}|${task.file.lastModified}|${task.pageNumber || 0}`;
+      if (!existing.has(key) && !incoming.has(key)) {
+        newTasks.push(task);
+        incoming.add(key);
+      }
+    };
     for (const file of Array.from(files)) {
       const ext = file.name.toLowerCase();
       if (file.type === 'application/pdf' || ext.endsWith('.pdf')) {
         try {
           const { doc, numPages } = await getPdfPageCount(file);
           for (let p = 1; p <= numPages; p++) {
-            newTasks.push({
+            addTask({
               id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_p${p}`,
               label: `${file.name} — Trang ${p}/${numPages}`,
               file,
@@ -183,7 +196,7 @@ export const BatchGradingPage: React.FC = () => {
           }
           await closePdfDocument(doc);
         } catch (err) {
-          newTasks.push({
+          addTask({
             id: `task_err_${Date.now()}`,
             label: file.name,
             file,
@@ -195,19 +208,23 @@ export const BatchGradingPage: React.FC = () => {
         file.type.startsWith('image/') ||
         /\.(jpg|jpeg|png|webp)$/i.test(ext)
       ) {
-        newTasks.push({
+        addTask({
           id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           label: file.name,
           file,
           status: 'queued',
         });
+      } else {
+        errors.push(`${file.name}: định dạng chưa hỗ trợ`);
       }
     }
-    setQueue((prev) => [...prev, ...newTasks]);
+    setQueue(prev => [...prev, ...newTasks]);
+    setImportNotice(`${newTasks.length} trang/ảnh đã thêm vào hàng đợi.${errors.length ? ` ${errors.join('; ')}` : ''}${newTasks.length === 0 && !errors.length ? ' Các tệp đã có trong hàng đợi.' : ''}`);
   };
 
   const runQueue = async (onlyRetryErrors = false) => {
-    if (!activeExam || !template || isRunning) return;
+    if (!activeExam || !template || runningRef.current || opencvStatus !== 'ready') return;
+    runningRef.current = true;
     cancelRef.current = false;
     pauseRef.current = false;
     setIsPaused(false);
@@ -274,6 +291,9 @@ export const BatchGradingPage: React.FC = () => {
             settings
           );
 
+          if (!results.length) {
+            throw new Error('Không tìm thấy phiếu hợp lệ trong trang/ảnh. Kiểm tra mẫu đã chọn và các điểm định vị.');
+          }
           for (const res of results) {
             const now = Date.now();
             const matchedStudent = students.find(
@@ -343,12 +363,17 @@ export const BatchGradingPage: React.FC = () => {
         }
       }
     } finally {
-      if (currentPdfDoc) await closePdfDocument(currentPdfDoc);
-      setIsRunning(false);
+      try { if (currentPdfDoc) await closePdfDocument(currentPdfDoc); } finally {
+        runningRef.current = false;
+        setIsRunning(false);
+      }
     }
   };
 
   const doneCount = queue.filter((q) => q.status === 'done' || q.status === 'needs_review').length;
+  const completedCount = queue.filter(q => q.status === 'done' || q.status === 'needs_review' || q.status === 'error').length;
+  const reviewCount = queue.filter(q => q.status === 'needs_review').length;
+  const processingCount = queue.filter(q => q.status === 'processing').length;
   const errCount = queue.filter((q) => q.status === 'error').length;
   const queuedCount = queue.filter((q) => q.status === 'queued').length;
   const practiceMatchedCount = practiceResults.filter((r) => r.matchedExpected).length;
@@ -360,12 +385,15 @@ export const BatchGradingPage: React.FC = () => {
           <h1 className="text-[20px] font-bold text-[#1E293B]">Chấm hàng loạt PDF và Ảnh</h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Đọc từng trang PDF · Tách phiếu ghép đôi A5 · Web Worker:{' '}
-            {workerReady ? 'Sẵn sàng' : 'Chế độ luồng chính an toàn'}
+            {workerReady ? 'Sẵn sàng (kiểm tra kết nối)' : 'Không kết nối'}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="batch-template" className="text-sm font-medium text-slate-700">Mẫu phiếu</label>
           <select
+            id="batch-template"
+            disabled={isRunning}
             value={selectedTplId}
             onChange={(e) => setSelectedTplId(e.target.value)}
             className="px-2.5 py-2 text-xs border border-slate-300 rounded-md bg-white max-w-[240px]"
@@ -414,6 +442,11 @@ export const BatchGradingPage: React.FC = () => {
         </div>
       </div>
 
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-950">
+        <strong>Lưu ý:</strong> Trang này sử dụng mẫu phiếu đã chọn để chấm toàn bộ hàng đợi;
+        chưa tự nhận diện nhiều mẫu khác nhau trong cùng một tệp. Với tệp chứa nhiều mẫu,
+        hãy tách theo mẫu hoặc kiểm tra từng nhóm trước khi chấm chính thức.
+      </div>
       {/* Dropzone */}
       {activeExam ? (
         <div
@@ -425,9 +458,9 @@ export const BatchGradingPage: React.FC = () => {
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            if (e.dataTransfer.files.length) enqueueFiles(e.dataTransfer.files);
+            if (!isRunning && e.dataTransfer.files.length) void enqueueFiles(e.dataTransfer.files);
           }}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => { if (!isRunning) fileInputRef.current?.click(); }}
           className={`border-2 border-dashed rounded-lg p-7 text-center cursor-pointer transition-colors ${
             dragOver
               ? 'border-[#2563EB] bg-blue-50/70'
@@ -447,7 +480,7 @@ export const BatchGradingPage: React.FC = () => {
             multiple
             accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
             onChange={(e) => {
-              if (e.target.files?.length) enqueueFiles(e.target.files);
+              if (!isRunning && e.target.files?.length) void enqueueFiles(e.target.files);
               e.target.value = '';
             }}
             className="hidden"
@@ -468,17 +501,21 @@ export const BatchGradingPage: React.FC = () => {
         </div>
       )}
 
+      {importNotice && <p role="status" className="text-sm text-slate-700">{importNotice}</p>}
       {/* Progress & Queue Table */}
       {queue.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-4">
               <span>
-                Tiến độ: <strong className="font-mono-num">{doneCount}/{queue.length}</strong>
+                Đã xử lý: <strong className="font-mono-num">{completedCount}/{queue.length}</strong>
               </span>
               <span className="text-slate-500 font-mono-num">
                 Thời gian: {(elapsedMs / 1000).toFixed(1)}s
               </span>
+              <span className="text-emerald-700">Đã chấm: {doneCount - reviewCount}</span>
+              <span className="text-amber-700">Chờ kiểm duyệt: {reviewCount}</span>
+              <span className="text-blue-700">Đang xử lý: {processingCount}</span>
               {errCount > 0 && (
                 <button
                   type="button"
@@ -506,7 +543,7 @@ export const BatchGradingPage: React.FC = () => {
             <div
               className="h-full bg-[#2563EB] transition-all"
               style={{
-                width: `${queue.length ? Math.round((doneCount / queue.length) * 100) : 0}%`,
+                width: `${queue.length ? Math.round((completedCount / queue.length) * 100) : 0}%`,
               }}
             />
           </div>
