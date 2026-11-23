@@ -70,10 +70,15 @@ export const CameraGradingPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<ExamSubmission | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
+  const [sessionReviewCount, setSessionReviewCount] = useState(0);
+  const [sessionErrorCount, setSessionErrorCount] = useState(0);
+  const processingRef = useRef(false);
+  const cameraStartTokenRef = useRef(0);
+  const lastCapturedSignatureRef = useRef('');
+  const lastCapturedAtRef = useRef(0);
+  const sheetPresentRef = useRef(false);
 
   const stableFramesRef = useRef(0);
-  const lastCapturedSbdRef = useRef<string>('');
-  const lastCaptureTimeRef = useRef<number>(0);
 
   const template = templates.find((t) => t.id === activeExam?.templateId) || templates[0];
   const examKeys = activeExam
@@ -81,6 +86,7 @@ export const CameraGradingPage: React.FC = () => {
     : [];
 
   const stopCamera = useCallback(() => {
+    cameraStartTokenRef.current += 1;
     if (animRef.current) {
       cancelAnimationFrame(animRef.current);
       animRef.current = null;
@@ -94,10 +100,15 @@ export const CameraGradingPage: React.FC = () => {
     }
     setCameraActive(false);
     setTorchOn(false);
+    setTorchSupported(false);
+    setLiveDet(null);
+    stableFramesRef.current = 0;
+    sheetPresentRef.current = false;
   }, []);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (requestedFacing?: 'environment' | 'user') => {
     stopCamera();
+    const startToken = cameraStartTokenRef.current;
     setCameraError(null);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Trình duyệt hoặc thiết bị không hỗ trợ truy cập Camera (MediaDevices API).');
@@ -106,12 +117,16 @@ export const CameraGradingPage: React.FC = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: { ideal: facingMode },
+          facingMode: { ideal: requestedFacing ?? facingMode },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         },
         audio: false,
       });
+      if (cameraStartTokenRef.current !== startToken) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -122,6 +137,7 @@ export const CameraGradingPage: React.FC = () => {
       setTorchSupported(!!caps?.torch);
       setCameraActive(true);
     } catch (err) {
+      if (cameraStartTokenRef.current !== startToken) return;
       setCameraError(
         err instanceof Error
           ? `Không thể mở Camera: ${err.message}`
@@ -137,10 +153,11 @@ export const CameraGradingPage: React.FC = () => {
   }, [stopCamera]);
 
   const captureAndGrade = useCallback(async () => {
-    if (!videoRef.current || !activeExam || !template || processing) return;
+    if (!videoRef.current || !activeExam || !template || processingRef.current) return;
     const vid = videoRef.current;
     if (!vid.videoWidth || !vid.videoHeight) return;
 
+    processingRef.current = true;
     setProcessing(true);
     try {
       const snap = document.createElement('canvas');
@@ -157,21 +174,14 @@ export const CameraGradingPage: React.FC = () => {
       );
 
       for (const res of results) {
-        // Guard against duplicate immediate capture of the same paper
+        // Prevent rapid repeat captures, including unreadable SBDs.
         const now = Date.now();
-        if (
-          res.recognition.sbd &&
-          !res.recognition.sbd.includes('?') &&
-          res.recognition.sbd === lastCapturedSbdRef.current &&
-          now - lastCaptureTimeRef.current < 4500 &&
-          !res.pairedSlot
-        ) {
+        const signature = `${activeExam.id}|${template.id}|${res.recognition.sbd}|${res.recognition.examCode}|${JSON.stringify(res.recognition.questions)}`;
+        if (signature === lastCapturedSignatureRef.current && now - lastCapturedAtRef.current < 10000) {
           continue;
         }
-        if (res.recognition.sbd && !res.recognition.sbd.includes('?')) {
-          lastCapturedSbdRef.current = res.recognition.sbd;
-          lastCaptureTimeRef.current = now;
-        }
+        lastCapturedSignatureRef.current = signature;
+        lastCapturedAtRef.current = now;
 
         const matchedStudent = students.find(
           (st) => st.sbd && st.sbd === res.recognition.sbd
@@ -205,14 +215,17 @@ export const CameraGradingPage: React.FC = () => {
         await upsertSubmission(sub);
         setLastResult(sub);
         setSessionCount((c) => c + 1);
+        if (sub.status !== 'graded') setSessionReviewCount(c => c + 1);
         if (settings.soundEnabled) playSuccessBeep();
       }
       snap.width = 1;
       snap.height = 1;
     } catch (err) {
+      setSessionErrorCount(c => c + 1);
       setCameraError(err instanceof Error ? err.message : 'Lỗi xử lý ảnh Camera.');
     } finally {
       stableFramesRef.current = 0;
+      processingRef.current = false;
       setProcessing(false);
     }
   }, [activeExam, template, processing, examKeys, settings, students, upsertSubmission]);
@@ -261,10 +274,12 @@ export const CameraGradingPage: React.FC = () => {
           }
         }
 
-        if (det.isStableReady && autoCapture && !processing) {
+        if (!det.isStableReady) sheetPresentRef.current = false;
+        if (det.isStableReady && autoCapture && !processingRef.current && !sheetPresentRef.current) {
           stableFramesRef.current += 1;
           if (stableFramesRef.current >= settings.autoCaptureFrames) {
-            captureAndGrade();
+            sheetPresentRef.current = true;
+            void captureAndGrade();
           }
         } else {
           stableFramesRef.current = 0;
@@ -332,7 +347,7 @@ export const CameraGradingPage: React.FC = () => {
           {!cameraActive ? (
             <button
               type="button"
-              onClick={startCamera}
+              onClick={() => void startCamera()}
               disabled={opencvStatus !== 'ready'}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#2563EB] text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
             >
@@ -352,8 +367,9 @@ export const CameraGradingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setFacingMode((m) => (m === 'environment' ? 'user' : 'environment'));
-                  setTimeout(startCamera, 100);
+                  const next = facingMode === 'environment' ? 'user' : 'environment';
+                  setFacingMode(next);
+                  void startCamera(next);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-slate-300 bg-white text-xs font-medium hover:bg-slate-50"
               >
@@ -409,6 +425,11 @@ export const CameraGradingPage: React.FC = () => {
         </div>
       )}
 
+      <div className="flex flex-wrap gap-2 text-sm" aria-live="polite">
+        <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 font-semibold text-emerald-800">Đã lưu: {sessionCount}</span>
+        <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-800">Chờ kiểm duyệt: {sessionReviewCount}</span>
+        <span className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-800">Lỗi xử lý: {sessionErrorCount}</span>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Camera Viewport */}
         <div className="lg:col-span-8 bg-slate-900 rounded-lg overflow-hidden relative min-h-[380px] flex items-center justify-center">
@@ -432,7 +453,7 @@ export const CameraGradingPage: React.FC = () => {
               </p>
               <button
                 type="button"
-                onClick={startCamera}
+                onClick={() => void startCamera()}
                 disabled={opencvStatus !== 'ready'}
                 className="px-4 py-2 rounded-md bg-[#2563EB] text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
               >
@@ -469,7 +490,7 @@ export const CameraGradingPage: React.FC = () => {
                 </label>
                 <button
                   type="button"
-                  onClick={captureAndGrade}
+                  onClick={() => void captureAndGrade()}
                   disabled={processing}
                   className="px-3 py-1.5 rounded bg-[#16A34A] hover:bg-green-700 font-medium disabled:opacity-50"
                 >
@@ -545,7 +566,8 @@ export const CameraGradingPage: React.FC = () => {
                   type="button"
                   onClick={() => {
                     lastCapturedSbdRef.current = '';
-                    captureAndGrade();
+                    sheetPresentRef.current = true;
+            void captureAndGrade();
                   }}
                   disabled={!cameraActive || processing}
                   className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded border border-slate-300 hover:bg-slate-50 font-medium disabled:opacity-50"
