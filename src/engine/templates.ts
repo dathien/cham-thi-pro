@@ -581,11 +581,50 @@ export function buildTemplateFromSpec(spec: TemplateSpec): SheetTemplate {
   };
 }
 
+/** Kiểm tra cấu trúc vùng tô của mẫu theo định dạng thi từ năm 2025.
+ * Đây là kiểm tra cấu trúc nội bộ, KHÔNG phải chứng nhận tương thích với phôi chính thức.
+ */
+export function validateThpt2025Template(template: SheetTemplate): string[] {
+  if (template.category !== 'thpt2025') return [];
+  const errors: string[] = [];
+  const has = (kind: BubbleCoord['kind'], question: number, option: string, subItem?: 'a' | 'b' | 'c' | 'd', col?: number) =>
+    template.bubbles.some(b => b.kind === kind && b.question === question && b.option === option &&
+      (subItem === undefined || b.subItem === subItem) && (col === undefined || b.col === col));
+  for (let q = 1; q <= template.part1Count; q++) {
+    for (const opt of ['A', 'B', 'C', 'D']) {
+      if (!has('part1', q, opt)) errors.push(`Phần I câu ${q}: thiếu ô ${opt}`);
+    }
+  }
+  for (let q = 1; q <= template.part2Count; q++) {
+    for (const sub of ['a', 'b', 'c', 'd'] as const) {
+      for (const opt of ['Đ', 'S']) {
+        if (!has('part2', q, opt, sub)) errors.push(`Phần II câu ${q}${sub}: thiếu ô ${opt}`);
+      }
+    }
+  }
+  for (let q = 1; q <= template.part3Count; q++) {
+    for (let col = 0; col < template.part3ColsPerQuestion; col++) {
+      for (let digit = 0; digit <= 9; digit++) {
+        if (!has('part3', q, String(digit), undefined, col)) {
+          errors.push(`Phần III câu ${q}, cột ${col + 1}: thiếu chữ số ${digit}`);
+        }
+      }
+    }
+    if (!has('part3', q, '-', undefined, 0)) errors.push(`Phần III câu ${q}: thiếu dấu âm`);
+    if (template.part3ColsPerQuestion > 2 &&
+      !Array.from({ length: template.part3ColsPerQuestion - 2 }, (_, i) => i + 1)
+        .some(col => has('part3', q, ',', undefined, col))) {
+      errors.push(`Phần III câu ${q}: thiếu dấu phẩy thập phân`);
+    }
+  }
+  return errors;
+}
+
 export function getBuiltInTemplates(): SheetTemplate[] {
   return [
     buildTemplateFromSpec({
       id: 'tpl_thpt2025_toan',
-      name: 'THPT 2025 – Môn Toán (12 I · 4 II · 6 III)',
+      name: 'Theo cấu trúc THPT từ 2025 – Toán (12 I · 4 II · 6 III)',
       category: 'thpt2025',
       paperSize: 'A4',
       orientation: 'portrait',
@@ -601,7 +640,7 @@ export function getBuiltInTemplates(): SheetTemplate[] {
     }),
     buildTemplateFromSpec({
       id: 'tpl_thpt2025_khtn',
-      name: 'THPT 2025 – KHTN / Địa lý (18 I · 4 II · 6 III)',
+      name: 'Theo cấu trúc THPT từ 2025 – KHTN / Địa lí (18 I · 4 II · 6 III)',
       category: 'thpt2025',
       paperSize: 'A4',
       orientation: 'portrait',
@@ -613,11 +652,11 @@ export function getBuiltInTemplates(): SheetTemplate[] {
       part3Count: 6,
       isOfficialVerified: false,
       compatibilityNote:
-        'Phù hợp Vật lý, Hóa học, Sinh học, Địa lý theo cấu trúc 2025 (18 câu Phần I, 4 câu Đúng/Sai, 6 câu Trả lời ngắn).',
+        'Mẫu nội bộ theo cấu trúc đề Vật lí, Hóa học, Sinh học, Địa lí từ 2025 (18 câu Phần I, 4 câu Đúng/Sai, 6 câu Trả lời ngắn). Cần đối chiếu phôi phiếu in thực tế trước khi sử dụng.',
     }),
     buildTemplateFromSpec({
       id: 'tpl_thpt2025_40',
-      name: 'THPT 2025 – Ngoại ngữ / Lịch sử / GDKT&PL (40 câu)',
+      name: 'Theo cấu trúc THPT từ 2025 – Ngoại ngữ / Lịch sử / GDKT&PL (40 câu)',
       category: 'thpt2025',
       paperSize: 'A4',
       orientation: 'portrait',
@@ -629,7 +668,7 @@ export function getBuiltInTemplates(): SheetTemplate[] {
       part3Count: 0,
       isOfficialVerified: false,
       compatibilityNote:
-        'Cấu trúc 40 câu trắc nghiệm 4 lựa chọn A/B/C/D theo môn Tiếng Anh, Lịch sử, Tin học, Công nghệ.',
+        'Mẫu nội bộ 40 câu trắc nghiệm A/B/C/D cho các môn có cấu trúc tương ứng. Không có Phần II và Phần III; cần đối chiếu mẫu thực tế trước khi sử dụng.',
     }),
     ...[10, 15, 20, 25, 30, 40, 50, 60, 80, 100].map((count) =>
       buildTemplateFromSpec({
