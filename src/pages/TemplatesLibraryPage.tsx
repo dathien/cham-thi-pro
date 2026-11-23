@@ -11,6 +11,13 @@ import {
   ShieldAlert,
   Search,
   Upload,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -20,7 +27,7 @@ import {
   generateBlankSheetPdf,
   type SimulatedMarkSpec,
 } from '../engine/sheetRenderer';
-import { buildTemplateFromSpec } from '../engine/templates';
+import { buildTemplateFromSpec, validateThpt2025Template } from '../engine/templates';
 import type { SheetTemplate, TemplateCategory } from '../types/omr';
 
 const CATEGORY_TABS: { id: 'all' | TemplateCategory; label: string }[] = [
@@ -56,6 +63,12 @@ export const TemplatesLibraryPage: React.FC = () => {
   const [testGradeMsg, setTestGradeMsg] = useState<string | null>(null);
   const [gradingTest, setGradingTest] = useState(false);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fullscreenCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [zoom, setZoom] = useState(100);
+  const [fullscreenPreview, setFullscreenPreview] = useState(false);
+  const [hideTemplateList, setHideTemplateList] = useState(false);
+  const [fitPreview, setFitPreview] = useState(true);
+  const previewScrollRef = useRef<HTMLDivElement>(null);
 
   const filtered = templates.filter((t) =>
     (catFilter === 'all' || t.category === catFilter) &&
@@ -63,6 +76,7 @@ export const TemplatesLibraryPage: React.FC = () => {
       .includes(searchText.trim().toLocaleLowerCase('vi'))
   );
   const selected = templates.find((t) => t.id === selectedId) || filtered[0] || templates[0];
+  const templateIssues = selected ? validateThpt2025Template(selected) : [];
 
   const buildSampleSimSpec = (tpl: SheetTemplate): SimulatedMarkSpec => {
     const matchedKey = activeExam
@@ -103,19 +117,22 @@ export const TemplatesLibraryPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!selected || !previewCanvasRef.current) return;
-    drawTemplateOnCanvas(
-      previewCanvasRef.current,
-      selected,
-      {
-        schoolName: activeExam?.schoolName || 'TRƯỜNG THPT',
-        examName: activeExam?.name || 'PHIẾU TRẢ LỜI TRẮC NGHIỆM',
-        subject: activeExam?.subject || 'Môn kiểm tra',
-      },
-      showFilledPreview ? buildSampleSimSpec(selected) : undefined
-    );
+    if (!selected) return;
+    for (const canvas of [previewCanvasRef.current, fullscreenCanvasRef.current]) {
+      if (!canvas) continue;
+      drawTemplateOnCanvas(
+        canvas,
+        selected,
+        {
+          schoolName: activeExam?.schoolName || 'TRƯỜNG THPT',
+          examName: activeExam?.name || 'PHIẾU TRẢ LỜI TRẮC NGHIỆM',
+          subject: activeExam?.subject || 'Môn kiểm tra',
+        },
+        showFilledPreview ? buildSampleSimSpec(selected) : undefined
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, activeExam, showFilledPreview]);
+  }, [selected, activeExam, showFilledPreview, fullscreenPreview]);
 
   const handleDetectTemplate = async (file: File) => {
     if (opencvStatus !== 'ready') {
@@ -171,6 +188,41 @@ export const TemplatesLibraryPage: React.FC = () => {
       if (detectFileRef.current) detectFileRef.current.value = '';
     }
   };
+
+  useEffect(() => {
+    if (!fullscreenPreview) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreenPreview(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [fullscreenPreview]);
+
+  const changeZoom = (next: number) => {
+    setFitPreview(false);
+    setZoom(Math.max(50, Math.min(250, next)));
+  };
+
+  const previewTools = (large: boolean) => (
+    <div className="flex flex-wrap items-center gap-2" aria-label="Điều khiển xem mẫu phiếu">
+      <button type="button" onClick={() => changeZoom(zoom - 25)} aria-label="Thu nhỏ"
+        className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ZoomOut className="h-4 w-4" /></button>
+      <span className="min-w-[54px] text-center text-sm font-semibold tabular-nums">{fitPreview ? 'Vừa khung' : `${zoom}%`}</span>
+      <button type="button" onClick={() => changeZoom(zoom + 25)} aria-label="Phóng to"
+        className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ZoomIn className="h-4 w-4" /></button>
+      <button type="button" onClick={() => { setFitPreview(true); setZoom(100); }}
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100">Vừa khung</button>
+      <button type="button" onClick={() => { setFitPreview(false); setZoom(100); }}
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100">100%</button>
+      <button type="button" onClick={() => { setFitPreview(false); setZoom(150); }}
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100">150%</button>
+      <button type="button" onClick={() => setFullscreenPreview(!large)}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+        {large ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        {large ? 'Đóng xem lớn' : 'Xem lớn'}
+      </button>
+    </div>
+  );
 
   const handleDownloadPdf = async () => {
     if (!selected) return;
@@ -409,9 +461,16 @@ export const TemplatesLibraryPage: React.FC = () => {
         ))}
       </div>
 
+      <div className="flex justify-end">
+        <button type="button" onClick={() => setHideTemplateList(v => !v)}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50">
+          {hideTemplateList ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {hideTemplateList ? 'Hiện danh sách mẫu' : 'Ẩn danh sách mẫu'}
+        </button>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Template List */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-[700px] overflow-y-auto">
+        <div className={`${hideTemplateList ? 'hidden' : 'lg:col-span-5'} bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-[700px] overflow-y-auto">
           {filtered.length === 0 && <p className="p-5 text-sm text-slate-600">Không tìm thấy mẫu phù hợp. Hãy thay đổi từ khóa hoặc nhóm mẫu.</p>}
           {filtered.map((tpl) => {
             const isSel = selected?.id === tpl.id;
@@ -459,7 +518,7 @@ export const TemplatesLibraryPage: React.FC = () => {
 
         {/* Live Canonical Preview & Actions */}
         {selected && (
-          <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg p-4 space-y-3.5">
+          <div className={`${hideTemplateList ? 'lg:col-span-12' : 'lg:col-span-7'} min-w-0 bg-white border border-slate-200 rounded-lg p-4 space-y-3.5`}>
             <div className="border-b border-slate-100 pb-3 space-y-2.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
@@ -582,16 +641,54 @@ export const TemplatesLibraryPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="bg-slate-100 rounded-md p-3 flex justify-center overflow-auto max-h-[540px]">
-              <canvas
-                ref={previewCanvasRef}
-                className="max-w-full h-auto shadow-sm bg-white border border-slate-200"
-                style={{ maxHeight: '500px', width: 'auto' }}
+            {selected.category === 'thpt2025' && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm leading-relaxed text-slate-800">
+                <p className={`mb-2 font-semibold ${templateIssues.length ? 'text-red-700' : 'text-emerald-800'}`}>
+                  {templateIssues.length
+                    ? `Cấu trúc vùng tô chưa hợp lệ (${templateIssues.length} vấn đề): ${templateIssues.slice(0, 3).join('; ')}`
+                    : 'Đã kiểm tra đủ vùng tô I, II, III theo cấu hình của mẫu nội bộ.'}
+                </p>
+                <strong>Cấu trúc mẫu:</strong> Phần I: {selected.part1Count} câu A/B/C/D;
+                {' '}Phần II: {selected.part2Count} câu Đúng/Sai (mỗi câu 4 ý a, b, c, d);
+                {' '}Phần III: {selected.part3Count} câu trả lời ngắn.
+                {selected.part2Count > 0 && (
+                  <p className="mt-1">Điểm Phần II theo số ý đúng trong mỗi câu: 0 ý = 0; 1 ý = 0,10; 2 ý = 0,25; 3 ý = 0,50; 4 ý = 1,00 (cấu hình trong Đáp án và thang điểm).</p>
+                )}
+                {selected.part3Count > 0 && (
+                  <p className="mt-1">Phần III hỗ trợ các ô chữ số 0–9, dấu âm và dấu phẩy; cần kiểm tra nhận dạng trên phiếu in thực tế.</p>
+                )}
+                <p className="mt-1 text-amber-800">Đây là mẫu do ứng dụng tạo theo cấu trúc bài thi, không phải phôi phiếu chính thức được Bộ GD&ĐT xác nhận.</p>
+              </div>
+            )}
+            {previewTools(false)}
+            <div ref={previewScrollRef} className="bg-slate-100 rounded-md p-3 overflow-auto max-h-[680px]"
+              aria-label="Xem trước mẫu phiếu có thể phóng to và cuộn">
+              <canvas ref={previewCanvasRef}
+                className="block mx-auto shadow-sm bg-white border border-slate-200"
+                style={fitPreview
+                  ? { width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '640px' }
+                  : { width: `${selected.widthPx * zoom / 100}px`, height: 'auto', maxWidth: 'none' }}
               />
             </div>
           </div>
         )}
       </div>
+      {fullscreenPreview && selected && (
+        <div role="dialog" aria-modal="true" aria-label={`Xem lớn mẫu phiếu ${selected.name}`}
+          className="fixed inset-0 z-[100] flex flex-col bg-slate-950/95 p-3 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3">
+            <h2 className="max-w-[440px] text-sm font-bold text-slate-900">{selected.name}</h2>
+            {previewTools(true)}
+          </div>
+          <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg bg-slate-200 p-4">
+            <canvas ref={fullscreenCanvasRef} className="block mx-auto bg-white shadow-xl"
+              style={fitPreview
+                ? { width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%' }
+                : { width: `${selected.widthPx * zoom / 100}px`, height: 'auto', maxWidth: 'none' }} />
+          </div>
+          <p className="mt-2 text-center text-sm text-white">Dùng thanh cuộn để xem các vùng khi phóng to. Nhấn Esc để đóng.</p>
+        </div>
+      )}
     </div>
   );
 };
